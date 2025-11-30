@@ -1532,23 +1532,23 @@ test = ["pytest", "pytest-instafail", "pytest-subtests", "pytest-xdist", "pywin3
 
 [[package]]
 name = "py-cord"
-version = "2.6.1"
+version = "2.7.0rc1"
 description = "A Python wrapper for the Discord API"
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.9"
 groups = ["main"]
 files = [
-    {file = "py_cord-2.6.1-py3-none-any.whl", hash = "sha256:e3d3b528c5e37b0e0825f5b884cbb9267860976c1e4878e28b55da8fd3af834b"},
-    {file = "py_cord-2.6.1.tar.gz", hash = "sha256:36064f225f2c7bbddfe542d5ed581f2a5744f618e039093cf7cd2659a58bc79b"},
+    {file = "py_cord-2.7.0rc1-py3-none-any.whl", hash = "sha256:c4c3b930ad3572ebf5827c5f473942a577841d19281bdf5a8383cfee210ec202"},
+    {file = "py_cord-2.7.0rc1.tar.gz", hash = "sha256:cca759ebb0537cd3b69cd16e26287e667338a5283411c73ce61fa8f9892a7b40"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.6.0,<4.0"
-typing-extensions = {version = ">=4,<5", markers = "python_version < \"3.11\""}
+typing_extensions = ">=4.5.0,<5"
 
 [package.extras]
-docs = ["furo (==2023.3.23)", "myst-parser (==1.0.0)", "sphinx (==5.3.0)", "sphinx-autodoc-typehints (==1.23.0)", "sphinx-copybutton (==0.5.2)", "sphinxcontrib-trio (==1.1.2)", "sphinxcontrib-websupport (==1.2.4)", "sphinxext-opengraph (==0.9.1)"]
-speed = ["aiohttp[speedups]", "msgspec (>=0.18.6,<0.19.0)"]
+docs = ["furo (==2024.8.6)", "levenshtein (==0.27.1)", "myst-parser[linkify] (==4.0.0)", "sphinx (==8.0.2)", "sphinx-autodoc-typehints (==2.2.3)", "sphinx-copybutton (==0.5.2)", "sphinx-intl (==2.3.2)", "sphinxcontrib-websupport (==2.0.0)", "sphinxcontrib_trio (==1.1.2)", "sphinxext-opengraph (==0.12.0)", "typing_extensions (==4.15.0)"]
+speed = ["aiohttp[speedups]", "msgspec (>=0.19.0,<0.20.0)"]
 voice = ["PyNaCl (>=1.3.0,<1.6)"]
 
 [[package]]
@@ -2412,4 +2412,4 @@ propcache = ">=0.2.1"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10"
-content-hash = "c53bfe440337e904f51ce16167dcae2541a3b001915097ee50452cefa295d9a3"
+content-hash = "6bfbf16253c5a3dd87e1cae71cb05a317aaae53295acc39f30d34bef0cd2dbd6"

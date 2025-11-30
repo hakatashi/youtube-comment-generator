@@ -32,8 +32,18 @@ class AudioBufferSink(discord.sinks.Sink):
                 logger.debug(f"Ignoring audio from user {user_id}")
                 return
 
+            # データが空の場合はスキップ（デコードエラー時）
+            if not data or len(data) == 0:
+                logger.debug(f"Skipping empty audio data from user {user_id}")
+                return
+
             logger.debug(f"Received {len(data)} bytes from user {user_id}")
-            self.audio_buffer.add_audio(user_id, data)
+
+            try:
+                self.audio_buffer.add_audio(user_id, data)
+            except Exception as e:
+                logger.warning(f"Failed to add audio data for user {user_id}: {e}")
+                return
 
             # ユーザーごとのバイト数をカウント
             if user_id not in self._bytes_written:
@@ -71,6 +81,8 @@ class CommentBot(commands.Bot):
         intents.message_content = True
         intents.voice_states = True
         intents.guilds = True
+        intents.guild_messages = True
+        intents.members = True  # 音声受信に必要
 
         super().__init__(command_prefix="!", intents=intents)
 
@@ -103,7 +115,16 @@ class CommentBot(commands.Bot):
         # ボイスチャンネルに接続
         try:
             logger.info(f"Connecting to voice channel: {voice_channel.name}")
-            self.voice_client = await voice_channel.connect()
+
+            # reconnect=False を指定して接続の再試行を無効化
+            # timeout を長めに設定
+            self.voice_client = await voice_channel.connect(
+                timeout=60.0,
+                reconnect=False,
+            )
+
+            # 接続後、少し待機してから録音開始
+            await asyncio.sleep(1.0)
 
             # カスタムSinkを作成して音声受信を開始
             sink = AudioBufferSink(self.audio_buffer, self.ignored_user_ids)

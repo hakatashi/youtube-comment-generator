@@ -3,8 +3,10 @@
 import json
 import logging
 import re
+from collections import deque
+from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import Deque, List
 
 from llama_cpp import Llama
 
@@ -20,6 +22,7 @@ class CommentGenerator:
         n_gpu_layers: int = -1,  # -1 = すべてのレイヤーをGPUに
         n_ctx: int = 4096,
         verbose: bool = False,
+        comments_file: str = "comments.txt",
     ):
         """
         Args:
@@ -27,11 +30,16 @@ class CommentGenerator:
             n_gpu_layers: GPUに載せるレイヤー数（-1で全レイヤー）
             n_ctx: コンテキスト長
             verbose: 詳細ログを出力するか
+            comments_file: コメント出力ファイルのパス
         """
         self.model_path = model_path
         self.n_gpu_layers = n_gpu_layers
         self.n_ctx = n_ctx
         self.llm = None
+        self.comments_file = Path(comments_file)
+
+        # 直近30件のコメント履歴を保持
+        self.comment_history: Deque[str] = deque(maxlen=30)
 
         logger.info(f"Initializing LLM: {model_path}")
         self._load_model()
@@ -88,6 +96,14 @@ class CommentGenerator:
             comments = self._extract_comments(generated_text)
 
             logger.info(f"Generated {len(comments)} comments")
+
+            # コメント履歴に追加
+            for comment in comments[:num_comments]:
+                self.comment_history.append(comment)
+
+            # ファイルに保存
+            self._save_comments_to_file(comments[:num_comments])
+
             return comments[:num_comments]
 
         except Exception as e:
@@ -116,7 +132,18 @@ class CommentGenerator:
 - 初見・挨拶系（「初見です」「こんにちは」など）
 - 質問や相槌（「なるほど」「それな」など）
 
-コメントは1行ずつ、番号なしで出力してください。各コメントは短く、自然な口語表現で書いてください。
+コメントは1行ずつ、番号なしで出力してください。各コメントは短く、自然な口語表現で書いてください。"""
+
+        # 直近のコメント履歴がある場合は追加
+        if self.comment_history:
+            history_text = "\n".join(f"- {comment}" for comment in self.comment_history)
+            prompt += f"""
+
+**重要**: 以下は直近で生成されたコメントです。これらと類似した内容や表現を避け、バリエーションに富んだ新しいコメントを生成してください：
+
+{history_text}"""
+
+        prompt += f"""
 
 ## 直近60秒の配信内容の文字起こし
 
@@ -163,3 +190,28 @@ class CommentGenerator:
                 comments.append(line)
 
         return comments
+
+    def _save_comments_to_file(self, comments: List[str]) -> None:
+        """
+        生成されたコメントをタイムスタンプ付きでファイルに保存
+
+        Args:
+            comments: 保存するコメントのリスト
+        """
+        if not comments:
+            return
+
+        try:
+            timestamp = datetime.now().isoformat()
+
+            # ファイルに追記
+            with open(self.comments_file, "a", encoding="utf-8") as f:
+                f.write(f"# {timestamp}\n")
+                for comment in comments:
+                    f.write(f"{comment}\n")
+                f.write("\n")  # セクション区切り
+
+            logger.info(f"Saved {len(comments)} comments to {self.comments_file}")
+
+        except Exception as e:
+            logger.error(f"Failed to save comments to file: {e}")

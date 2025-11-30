@@ -210,3 +210,5 @@ __marimo__/
 models/
 *.gguf
 .env.local
+comments.txt
+debug_audio_*.wav

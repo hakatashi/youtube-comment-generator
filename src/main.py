@@ -26,6 +26,10 @@ logging.basicConfig(
     ],
 )
 
+# Discord Opusのログレベルを上げて警告を抑制
+logging.getLogger("discord.opus").setLevel(logging.ERROR)
+logging.getLogger("discord.voice_client").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 

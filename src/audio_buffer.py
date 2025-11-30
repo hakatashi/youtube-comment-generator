@@ -1,9 +1,10 @@
 """音声バッファ管理モジュール"""
 
 import io
+import time
 import wave
 from collections import deque
-from typing import Deque, Dict, List, Optional
+from typing import Deque, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -22,11 +23,8 @@ class UserAudioBuffer:
         self.channels = channels
         self.buffer_duration = buffer_duration
 
-        # バッファサイズ（サンプル数）
-        self.max_samples = sample_rate * buffer_duration
-
-        # 音声データバッファ（dequeで古いデータを自動削除）
-        self.buffer: Deque[np.ndarray] = deque(maxlen=self.max_samples)
+        # 音声データバッファ（タイムスタンプ付き）: (timestamp, sample)
+        self.buffer: Deque[Tuple[float, int]] = deque()
 
     def add_audio(self, audio_data: bytes) -> None:
         """
@@ -35,6 +33,9 @@ class UserAudioBuffer:
         Args:
             audio_data: PCM音声データ（int16形式のバイト列）
         """
+        # 現在時刻を取得
+        current_time = time.time()
+
         # バイト列をnumpy配列に変換
         audio_array = np.frombuffer(audio_data, dtype=np.int16)
 
@@ -43,32 +44,44 @@ class UserAudioBuffer:
             # ステレオデータを2チャンネルに分割してモノラルに変換
             audio_array = audio_array.reshape(-1, 2).mean(axis=1).astype(np.int16)
 
-        # バッファに追加
+        # バッファに追加（タイムスタンプ付き）
         for sample in audio_array:
-            self.buffer.append(sample)
+            self.buffer.append((current_time, sample))
+
+        # buffer_duration秒より古いデータを削除
+        cutoff_time = current_time - self.buffer_duration
+        while self.buffer and self.buffer[0][0] < cutoff_time:
+            self.buffer.popleft()
 
     def get_audio(self, duration: Optional[int] = None) -> np.ndarray:
         """
-        バッファから音声データを取得
+        バッファから音声データを取得（時刻ベース）
 
         Args:
             duration: 取得する時間（秒）。Noneの場合は全データ
+                     指定された場合、現在時刻から過去duration秒以内のデータを取得
 
         Returns:
             音声データ（numpy配列）
         """
-        if duration is None:
-            # 全データを返す
-            return np.array(list(self.buffer), dtype=np.int16)
-
-        # 指定時間分のサンプル数
-        samples = min(self.sample_rate * duration, len(self.buffer))
-
-        # 最新のsamples分を取得
-        if samples == 0:
+        if not self.buffer:
             return np.array([], dtype=np.int16)
 
-        return np.array(list(self.buffer)[-samples:], dtype=np.int16)
+        if duration is None:
+            # 全データを返す（サンプル値のみ）
+            return np.array([sample for _, sample in self.buffer], dtype=np.int16)
+
+        # 現在時刻から指定時間前までのデータを取得
+        current_time = time.time()
+        cutoff_time = current_time - duration
+
+        # cutoff_time以降のデータのみを取得
+        filtered_data = [sample for timestamp, sample in self.buffer if timestamp >= cutoff_time]
+
+        if not filtered_data:
+            return np.array([], dtype=np.int16)
+
+        return np.array(filtered_data, dtype=np.int16)
 
     def get_wav_bytes(self, duration: Optional[int] = None) -> bytes:
         """
@@ -102,15 +115,23 @@ class UserAudioBuffer:
 
     def is_ready(self, required_duration: int = 60) -> bool:
         """
-        指定時間分のデータが溜まっているかチェック
+        指定時間以内にデータがあるかチェック（時刻ベース）
 
         Args:
-            required_duration: 必要な時間（秒）
+            required_duration: チェックする時間範囲（秒）
 
         Returns:
-            データが溜まっている場合True
+            指定時間以内にデータがある場合True
         """
-        return self.get_duration() >= required_duration
+        if not self.buffer:
+            return False
+
+        # 現在時刻から指定時間前までにデータがあるかチェック
+        current_time = time.time()
+        cutoff_time = current_time - required_duration
+
+        # cutoff_time以降のデータが存在するかチェック
+        return any(timestamp >= cutoff_time for timestamp, _ in self.buffer)
 
 
 class AudioBuffer:
