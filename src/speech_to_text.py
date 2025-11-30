@@ -18,8 +18,8 @@ class SpeechToText:
 
     def __init__(
         self,
-        model_name: str = "kotoba-tech/kotoba-whisper-v1.1",
-        device: str = "cuda",
+        model_name: str = "kotoba-tech/kotoba-whisper-v2.2",
+        device: str = "cpu",
     ):
         """
         Args:
@@ -36,27 +36,20 @@ class SpeechToText:
     def _load_model(self) -> None:
         """モデルをロード"""
         try:
-            # Check if CUDA/ROCm is actually available
-            cuda_available = torch.cuda.is_available()
-            if self.device == "cuda" and not cuda_available:
-                logger.warning("CUDA/ROCm not available, falling back to CPU")
-                self.device = "cpu"
+            # Force CPU mode due to ROCm compatibility issues with transformers
+            # See: https://rocm.blogs.amd.com/artificial-intelligence/whisper/README.html
+            # Transformers + PyTorch ROCm causes segmentation faults on MI50
+            device_id = -1
+            dtype = torch.float32
+            logger.info("Using CPU for Speech-to-Text (ROCm compatibility)")
 
-            # Set device index or -1 for CPU
-            if self.device == "cuda" and cuda_available:
-                device_id = 0
-                dtype = torch.float16
-                logger.info(f"Using CUDA device: {torch.cuda.get_device_name(0)}")
-            else:
-                device_id = -1
-                dtype = torch.float32
-                logger.info("Using CPU")
-
+            # kotoba-whisper-v2.2 requires trust_remote_code=True
             self.pipe = pipeline(
                 "automatic-speech-recognition",
                 model=self.model_name,
                 device=device_id,
                 torch_dtype=dtype,
+                trust_remote_code=True,
             )
             logger.info("Speech-to-Text model loaded successfully")
         except Exception as e:
@@ -86,7 +79,7 @@ class SpeechToText:
             result = self.pipe(
                 audio_data,
                 generate_kwargs={
-                    "language": "japanese",
+                    "language": "ja",
                     "task": "transcribe",
                 },
                 return_timestamps=False,
@@ -130,7 +123,7 @@ class SpeechToText:
             result = self.pipe(
                 audio_data,
                 generate_kwargs={
-                    "language": "japanese",
+                    "language": "ja",
                     "task": "transcribe",
                 },
                 return_timestamps=False,

@@ -21,10 +21,10 @@ Discord のボイスチャンネルから音声をリアルタイムで取得し
 
 ## 使用モデル
 
-- **Speech-to-Text**: Kotoba-Whisper v1.1 (約3GB VRAM)
+- **Speech-to-Text**: Kotoba-Whisper v2.2 (CPU動作、約3GB RAM)
 - **LLM**: Qwen3-32B (Q5_K_M量子化, 約24GB VRAM)
 
-合計で約27GBのVRAMを使用します。
+LLMはGPUで動作し、約24GBのVRAMを使用します。Speech-to-TextはROCm互換性の問題により、CPUで動作します。
 
 ## セットアップ
 
@@ -96,9 +96,9 @@ python -m src.main
 
 **注意**: 初回実行時は以下のモデルが自動的にダウンロードされます：
 - **Qwen3-32B** (約20GB) - Hugging Face Hub からダウンロード
-- **Kotoba-Whisper v1.1** (約3GB) - Hugging Face Hub からダウンロード
+- **Kotoba-Whisper v2.2** (約3GB) - Hugging Face Hub からダウンロード
 
-ダウンロードには時間がかかる場合があります。`models/` ディレクトリに保存されます。
+ダウンロードには時間がかかる場合があります。Qwen3-32Bは`models/`ディレクトリに、Kotoba-WhisperはHugging Face キャッシュに保存されます。
 
 ## 設定オプション
 
@@ -110,7 +110,7 @@ python -m src.main
 | `DISCORD_GUILD_ID` | **必須** | サーバーID |
 | `DISCORD_VOICE_CHANNEL_ID` | **必須** | ボイスチャンネルID |
 | `DISCORD_IGNORED_USER_IDS` | (空) | 無視するユーザーIDのリスト（カンマ区切り） |
-| `WHISPER_MODEL` | kotoba-tech/kotoba-whisper-v1.1 | STTモデル名 |
+| `WHISPER_MODEL` | kotoba-tech/kotoba-whisper-v2.2 | STTモデル名 |
 | `QWEN_MODEL` | Qwen/Qwen3-32B-GGUF | LLMモデル名 |
 | `QWEN_MODEL_FILE` | Qwen3-32B-Q5_K_M.gguf | GGUFファイル名 |
 | `DEVICE` | cuda | 使用デバイス |
@@ -156,6 +156,14 @@ youtube-comment-generator/
 - Qwen3の`<think>`ブロックは自動的に除去されます
 
 ## トラブルシューティング
+
+### Speech-to-Text が CPU で動作する理由
+
+Kotoba-Whisper v2.2 はCPUで動作します。これはPyTorch 2.6.0+rocm6.1とtransformersライブラリの組み合わせで、MI50 GPUにおいてSegmentation Faultが発生するためです。
+
+AMD公式のROCm Whisperガイド（https://rocm.blogs.amd.com/artificial-intelligence/whisper/README.html）に従った場合でも同様の問題が発生します。これはMI50固有の問題と考えられます。
+
+LLM（Qwen3-32B）はGPU（llama-cpp-python + ROCm）で正常に動作するため、主要な計算リソースは有効活用されています。音声認識は30秒ごとに1回のみ実行されるため、CPU処理でも実用上問題ありません。
 
 ### ROCm関連のエラー
 

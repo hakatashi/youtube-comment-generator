@@ -10,15 +10,27 @@ package-mode = false
 python = "^3.10"
 py-cord = "^2.6.0"
 PyNaCl = "^1.5.0"
-transformers = "^4.40.0"
+transformers = "^4.57.3"
 faster-whisper = "^1.0.0"
 numpy = "^1.24.0"
 scipy = "^1.10.0"
 soundfile = "^0.12.0"
 accelerate = "^0.30.0"
-huggingface-hub = "^0.20.0"
+huggingface-hub = "^0.36.0"
 python-dotenv = "^1.0.0"
+torch = {version = "2.6.0+rocm6.1", source = "torch_rocm6.1"}
+pytorch-triton-rocm = {version = "3.2.0", source = "pytorch"}
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[[tool.poetry.source]]
+name = "torch_rocm6.1"
+url = "https://download.pytorch.org/whl/rocm6.1"
+priority = "explicit"
+
+[[tool.poetry.source]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl"
+priority = "explicit"
