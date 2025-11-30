@@ -13,16 +13,28 @@ from .audio_buffer import AudioBuffer
 logger = logging.getLogger(__name__)
 
 
-class VoiceReceiver(discord.VoiceClient):
-    """音声受信用のカスタムVoiceClient"""
+class AudioBufferSink(discord.sinks.Sink):
+    """音声データをAudioBufferに送るカスタムSink"""
 
-    def __init__(self, client: discord.Client, channel: discord.VoiceChannel):
-        super().__init__(client, channel)
-        self.audio_buffer: Optional[AudioBuffer] = None
-
-    def set_audio_buffer(self, audio_buffer: AudioBuffer) -> None:
-        """音声バッファを設定"""
+    def __init__(self, audio_buffer: AudioBuffer):
+        super().__init__()
         self.audio_buffer = audio_buffer
+        self._bytes_written = 0
+
+    def write(self, data, user):
+        """音声データを受信してバッファに追加"""
+        if user is not None:
+            logger.debug(f"Received {len(data)} bytes from user {user}")
+            self.audio_buffer.add_audio(data)
+            self._bytes_written += len(data)
+
+            # 定期的にログを出力（デバッグ用）
+            if self._bytes_written % (48000 * 2 * 10) < len(data):  # 約10秒ごと
+                logger.info(f"Total audio received: {self._bytes_written / (48000 * 2):.1f}s")
+
+    def cleanup(self):
+        """クリーンアップ処理"""
+        logger.info(f"Sink cleanup - total bytes: {self._bytes_written}")
 
 
 class CommentBot(commands.Bot):
@@ -77,11 +89,11 @@ class CommentBot(commands.Bot):
             logger.info(f"Connecting to voice channel: {voice_channel.name}")
             self.voice_client = await voice_channel.connect()
 
-            # 音声受信を開始
+            # カスタムSinkを作成して音声受信を開始
+            sink = AudioBufferSink(self.audio_buffer)
             self.voice_client.start_recording(
-                discord.sinks.WaveSink(),
+                sink,
                 self._on_recording_finished,
-                self._on_audio_packet,
             )
 
             logger.info("Started recording")
@@ -89,18 +101,6 @@ class CommentBot(commands.Bot):
 
         except Exception as e:
             logger.error(f"Failed to connect to voice channel: {e}")
-
-    def _on_audio_packet(self, user: discord.User, data: bytes) -> None:
-        """
-        音声パケット受信時のコールバック
-
-        Args:
-            user: 音声を送信したユーザー
-            data: PCM音声データ
-        """
-        # 音声データをバッファに追加
-        if self.audio_buffer is not None:
-            self.audio_buffer.add_audio(data)
 
     async def _on_recording_finished(self, sink: discord.sinks.Sink) -> None:
         """
