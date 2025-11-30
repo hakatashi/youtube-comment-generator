@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import torch
+from scipy import signal
 from transformers import pipeline
 
 logger = logging.getLogger(__name__)
@@ -118,6 +119,12 @@ class SpeechToText:
                 audio_data = audio_array.astype(np.float32) / 32768.0
             else:
                 audio_data = audio_array.astype(np.float32)
+
+            # Whisperモデルは16kHzを期待しているため、リサンプリング
+            if sample_rate != 16000:
+                logger.info(f"Resampling audio from {sample_rate} Hz to 16000 Hz")
+                num_samples = int(len(audio_data) * 16000 / sample_rate)
+                audio_data = signal.resample(audio_data, num_samples)
 
             # 音声認識を実行
             result = self.pipe(
