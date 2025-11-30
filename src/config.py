@@ -16,8 +16,8 @@ class DiscordConfig:
 class ModelConfig:
     """モデル設定"""
     whisper_model: str = "kotoba-tech/kotoba-whisper-v1.1"
-    qwen_model: str = "Qwen/Qwen2.5-32B-Instruct-GGUF"
-    qwen_model_file: str = "qwen2.5-32b-instruct-q5_k_m.gguf"
+    qwen_model: str = "Qwen/Qwen3-32B-GGUF"
+    qwen_model_file: str = "Qwen3-32B-Q5_K_M.gguf"
     device: str = "cuda"  # ROCm uses CUDA API
     models_dir: Path = Path("./models")
 
@@ -62,8 +62,8 @@ class AppConfig:
 
         model_config = ModelConfig(
             whisper_model=os.getenv("WHISPER_MODEL", "kotoba-tech/kotoba-whisper-v1.1"),
-            qwen_model=os.getenv("QWEN_MODEL", "Qwen/Qwen2.5-32B-Instruct-GGUF"),
-            qwen_model_file=os.getenv("QWEN_MODEL_FILE", "qwen2.5-32b-instruct-q5_k_m.gguf"),
+            qwen_model=os.getenv("QWEN_MODEL", "Qwen/Qwen3-32B-GGUF"),
+            qwen_model_file=os.getenv("QWEN_MODEL_FILE", "Qwen3-32B-Q5_K_M.gguf"),
             device=os.getenv("DEVICE", "cuda"),
             models_dir=Path(os.getenv("MODELS_DIR", "./models")),
         )

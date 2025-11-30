@@ -35,11 +35,27 @@ class SpeechToText:
     def _load_model(self) -> None:
         """モデルをロード"""
         try:
+            # Check if CUDA/ROCm is actually available
+            cuda_available = torch.cuda.is_available()
+            if self.device == "cuda" and not cuda_available:
+                logger.warning("CUDA/ROCm not available, falling back to CPU")
+                self.device = "cpu"
+
+            # Set device index or -1 for CPU
+            if self.device == "cuda" and cuda_available:
+                device_id = 0
+                dtype = torch.float16
+                logger.info(f"Using CUDA device: {torch.cuda.get_device_name(0)}")
+            else:
+                device_id = -1
+                dtype = torch.float32
+                logger.info("Using CPU")
+
             self.pipe = pipeline(
                 "automatic-speech-recognition",
                 model=self.model_name,
-                device=0 if self.device == "cuda" else -1,
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                device=device_id,
+                torch_dtype=dtype,
             )
             logger.info("Speech-to-Text model loaded successfully")
         except Exception as e:
