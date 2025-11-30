@@ -42,11 +42,22 @@ class AppConfig:
     def from_env(cls) -> "AppConfig":
         """環境変数から設定を読み込み"""
         import os
+        import sys
+
+        # 必須の環境変数をチェック
+        required_vars = ["DISCORD_TOKEN", "DISCORD_GUILD_ID", "DISCORD_VOICE_CHANNEL_ID"]
+        missing_vars = [var for var in required_vars if not os.getenv(var)]
+
+        if missing_vars:
+            print(f"Error: Missing required environment variables: {', '.join(missing_vars)}")
+            print("Please create a .env file or set these environment variables.")
+            print("See .env.example for reference.")
+            sys.exit(1)
 
         discord_config = DiscordConfig(
-            token=os.getenv("DISCORD_TOKEN", os.getenv("DISCORD_TOKEN")),
-            guild_id=int(os.getenv("DISCORD_GUILD_ID", os.getenv("DISCORD_GUILD_ID"))),
-            voice_channel_id=int(os.getenv("DISCORD_VOICE_CHANNEL_ID", os.getenv("DISCORD_VOICE_CHANNEL_ID"))),
+            token=os.getenv("DISCORD_TOKEN"),
+            guild_id=int(os.getenv("DISCORD_GUILD_ID")),
+            voice_channel_id=int(os.getenv("DISCORD_VOICE_CHANNEL_ID")),
         )
 
         model_config = ModelConfig(

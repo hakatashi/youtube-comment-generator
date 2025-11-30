@@ -17,6 +17,7 @@ dependencies = [
     "soundfile>=0.12.0",
     "accelerate>=0.30.0",
     "huggingface-hub>=0.20.0",
+    "python-dotenv>=1.0.0",
 ]
 
 

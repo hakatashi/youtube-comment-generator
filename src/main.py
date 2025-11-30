@@ -5,12 +5,17 @@ import logging
 import sys
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from .audio_buffer import AudioBuffer
 from .comment_generator import CommentGenerator
 from .config import AppConfig
 from .discord_client import start_discord_client
 from .model_downloader import ModelDownloader
 from .speech_to_text import SpeechToText
+
+# .envファイルを読み込み
+load_dotenv()
 
 # ロギング設定
 logging.basicConfig(
