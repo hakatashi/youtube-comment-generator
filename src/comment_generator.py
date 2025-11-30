@@ -136,6 +136,10 @@ class CommentGenerator:
         Returns:
             コメントのリスト
         """
+        # Qwen3の<think>ブロックを除去
+        import re
+        generated_text = re.sub(r'<think>.*?</think>', '', generated_text, flags=re.DOTALL)
+
         # 改行で分割
         lines = generated_text.strip().split("\n")
 

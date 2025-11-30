@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import List
 
 
 @dataclass
@@ -10,6 +11,7 @@ class DiscordConfig:
     token: str
     guild_id: int
     voice_channel_id: int
+    ignored_user_ids: List[int]
 
 
 @dataclass
@@ -54,10 +56,20 @@ class AppConfig:
             print("See .env.example for reference.")
             sys.exit(1)
 
+        # 無視するユーザーIDのリストを読み込み
+        ignored_user_ids = []
+        ignored_ids_str = os.getenv("DISCORD_IGNORED_USER_IDS", "")
+        if ignored_ids_str.strip():
+            try:
+                ignored_user_ids = [int(uid.strip()) for uid in ignored_ids_str.split(",") if uid.strip()]
+            except ValueError:
+                print("Warning: Invalid DISCORD_IGNORED_USER_IDS format. Expected comma-separated integers.")
+
         discord_config = DiscordConfig(
             token=os.getenv("DISCORD_TOKEN"),
             guild_id=int(os.getenv("DISCORD_GUILD_ID")),
             voice_channel_id=int(os.getenv("DISCORD_VOICE_CHANNEL_ID")),
+            ignored_user_ids=ignored_user_ids,
         )
 
         model_config = ModelConfig(

@@ -16,25 +16,38 @@ logger = logging.getLogger(__name__)
 class AudioBufferSink(discord.sinks.Sink):
     """音声データをAudioBufferに送るカスタムSink"""
 
-    def __init__(self, audio_buffer: AudioBuffer):
+    def __init__(self, audio_buffer: AudioBuffer, ignored_user_ids: list[int]):
         super().__init__()
         self.audio_buffer = audio_buffer
-        self._bytes_written = 0
+        self.ignored_user_ids = set(ignored_user_ids)
+        self._bytes_written = {}  # user_id -> bytes のマップ
 
     def write(self, data, user):
         """音声データを受信してバッファに追加"""
         if user is not None:
-            logger.debug(f"Received {len(data)} bytes from user {user}")
-            self.audio_buffer.add_audio(data)
-            self._bytes_written += len(data)
+            user_id = int(user)
+
+            # 無視リストに含まれるユーザーの音声は無視
+            if user_id in self.ignored_user_ids:
+                logger.debug(f"Ignoring audio from user {user_id}")
+                return
+
+            logger.debug(f"Received {len(data)} bytes from user {user_id}")
+            self.audio_buffer.add_audio(user_id, data)
+
+            # ユーザーごとのバイト数をカウント
+            if user_id not in self._bytes_written:
+                self._bytes_written[user_id] = 0
+            self._bytes_written[user_id] += len(data)
 
             # 定期的にログを出力（デバッグ用）
-            if self._bytes_written % (48000 * 2 * 10) < len(data):  # 約10秒ごと
-                logger.info(f"Total audio received: {self._bytes_written / (48000 * 2):.1f}s")
+            if self._bytes_written[user_id] % (48000 * 2 * 10) < len(data):  # 約10秒ごと
+                logger.info(f"User {user_id}: Total audio received: {self._bytes_written[user_id] / (48000 * 2):.1f}s")
 
     def cleanup(self):
         """クリーンアップ処理"""
-        logger.info(f"Sink cleanup - total bytes: {self._bytes_written}")
+        for user_id, bytes_count in self._bytes_written.items():
+            logger.info(f"User {user_id}: Sink cleanup - total bytes: {bytes_count}")
 
 
 class CommentBot(commands.Bot):
@@ -45,12 +58,14 @@ class CommentBot(commands.Bot):
         guild_id: int,
         voice_channel_id: int,
         audio_buffer: AudioBuffer,
+        ignored_user_ids: list[int],
     ):
         """
         Args:
             guild_id: サーバーID
             voice_channel_id: ボイスチャンネルID
             audio_buffer: 音声バッファ
+            ignored_user_ids: 無視するユーザーIDのリスト
         """
         intents = discord.Intents.default()
         intents.message_content = True
@@ -62,6 +77,7 @@ class CommentBot(commands.Bot):
         self.guild_id = guild_id
         self.voice_channel_id = voice_channel_id
         self.audio_buffer = audio_buffer
+        self.ignored_user_ids = ignored_user_ids
         self.voice_client: Optional[VoiceClient] = None
         self.is_ready = False
 
@@ -90,7 +106,7 @@ class CommentBot(commands.Bot):
             self.voice_client = await voice_channel.connect()
 
             # カスタムSinkを作成して音声受信を開始
-            sink = AudioBufferSink(self.audio_buffer)
+            sink = AudioBufferSink(self.audio_buffer, self.ignored_user_ids)
             self.voice_client.start_recording(
                 sink,
                 self._on_recording_finished,
@@ -128,6 +144,7 @@ async def start_discord_client(
     guild_id: int,
     voice_channel_id: int,
     audio_buffer: AudioBuffer,
+    ignored_user_ids: list[int],
 ) -> CommentBot:
     """
     Discordクライアントを起動
@@ -137,6 +154,7 @@ async def start_discord_client(
         guild_id: サーバーID
         voice_channel_id: ボイスチャンネルID
         audio_buffer: 音声バッファ
+        ignored_user_ids: 無視するユーザーIDのリスト
 
     Returns:
         起動したBotインスタンス
@@ -145,6 +163,7 @@ async def start_discord_client(
         guild_id=guild_id,
         voice_channel_id=voice_channel_id,
         audio_buffer=audio_buffer,
+        ignored_user_ids=ignored_user_ids,
     )
 
     # 非同期でBotを起動

@@ -78,54 +78,95 @@ class CommentGeneratorApp:
 
         # Discordクライアントの起動
         logger.info("Starting Discord client...")
+        if self.config.discord.ignored_user_ids:
+            logger.info(f"Ignoring audio from users: {self.config.discord.ignored_user_ids}")
         self.discord_bot = await start_discord_client(
             token=self.config.discord.token,
             guild_id=self.config.discord.guild_id,
             voice_channel_id=self.config.discord.voice_channel_id,
             audio_buffer=self.audio_buffer,
+            ignored_user_ids=self.config.discord.ignored_user_ids,
         )
         logger.info("Discord client started")
 
         logger.info("Initialization complete!")
 
-    async def process_audio_and_generate_comments(self) -> None:
-        """音声処理とコメント生成を実行"""
-        logger.info("Processing audio and generating comments...")
+    async def process_user_audio(self, user_id: int) -> None:
+        """
+        特定ユーザーの音声を処理してコメントを生成
+
+        Args:
+            user_id: ユーザーID
+        """
+        logger.info(f"Processing audio for user {user_id}...")
 
         # バッファから60秒分の音声を取得
-        audio_data = self.audio_buffer.get_audio(duration=60)
+        audio_data = self.audio_buffer.get_audio(user_id, duration=60)
 
         if len(audio_data) == 0:
-            logger.warning("No audio data in buffer")
+            logger.warning(f"User {user_id}: No audio data in buffer")
             return
 
-        logger.info(f"Retrieved {len(audio_data)} audio samples")
+        logger.info(f"User {user_id}: Retrieved {len(audio_data)} audio samples")
+
+        # デバッグ用にWAVファイルを保存
+        from datetime import datetime
+        debug_wav_path = f"debug_audio_user{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
+        wav_bytes = self.audio_buffer.get_wav_bytes(user_id, duration=60)
+        with open(debug_wav_path, 'wb') as f:
+            f.write(wav_bytes)
+        logger.info(f"User {user_id}: Saved debug audio to {debug_wav_path}")
 
         # Speech-to-Text で文字起こし
-        logger.info("Transcribing audio...")
+        logger.info(f"User {user_id}: Transcribing audio...")
         transcription = self.stt.transcribe_from_array(
             audio_data, sample_rate=self.config.audio.sample_rate
         )
 
         if not transcription.strip():
-            logger.warning("Transcription is empty")
+            logger.warning(f"User {user_id}: Transcription is empty")
             return
 
-        logger.info(f"Transcription: {transcription}")
+        logger.info(f"User {user_id}: Transcription: {transcription}")
 
         # コメント生成
-        logger.info("Generating comments...")
+        logger.info(f"User {user_id}: Generating comments...")
         comments = self.comment_gen.generate_comments(
             transcription, num_comments=10
         )
 
         # コメントを出力
         print("\n" + "=" * 60)
-        print("生成されたコメント:")
+        print(f"生成されたコメント (User {user_id}):")
         print("=" * 60)
         for i, comment in enumerate(comments, 1):
             print(f"{i:2d}. {comment}")
         print("=" * 60 + "\n")
+
+    async def process_audio_and_generate_comments(self) -> None:
+        """全ユーザーの音声処理とコメント生成を実行"""
+        logger.info("Processing audio and generating comments...")
+
+        # バッファに音声が保存されているすべてのユーザーを取得
+        user_ids = self.audio_buffer.get_user_ids()
+
+        if not user_ids:
+            logger.warning("No users have audio data in buffer")
+            return
+
+        logger.info(f"Found {len(user_ids)} user(s) with audio data: {user_ids}")
+
+        # 各ユーザーごとに処理
+        for user_id in user_ids:
+            # 十分なデータがあるユーザーのみ処理
+            if not self.audio_buffer.is_ready(user_id, required_duration=60):
+                duration = self.audio_buffer.get_duration(user_id)
+                logger.warning(
+                    f"User {user_id}: Insufficient audio data ({duration:.1f}s / 60s)"
+                )
+                continue
+
+            await self.process_user_audio(user_id)
 
     async def run(self) -> None:
         """アプリケーションのメインループ"""
@@ -140,15 +181,7 @@ class CommentGeneratorApp:
                 # 指定間隔で処理を実行
                 await asyncio.sleep(self.config.audio.interval)
 
-                # バッファに十分なデータがあるかチェック
-                if not self.audio_buffer.is_ready(required_duration=60):
-                    logger.warning(
-                        f"Insufficient audio data "
-                        f"({self.audio_buffer.get_duration():.1f}s / 60s)"
-                    )
-                    continue
-
-                # 音声処理とコメント生成
+                # 音声処理とコメント生成（全ユーザー）
                 await self.process_audio_and_generate_comments()
 
         except KeyboardInterrupt:

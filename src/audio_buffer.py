@@ -3,13 +3,13 @@
 import io
 import wave
 from collections import deque
-from typing import Deque, Optional
+from typing import Deque, Dict, List, Optional
 
 import numpy as np
 
 
-class AudioBuffer:
-    """音声データをバッファリングするクラス"""
+class UserAudioBuffer:
+    """ユーザーごとの音声データをバッファリングするクラス"""
 
     def __init__(self, sample_rate: int = 48000, channels: int = 2, buffer_duration: int = 60):
         """
@@ -37,6 +37,11 @@ class AudioBuffer:
         """
         # バイト列をnumpy配列に変換
         audio_array = np.frombuffer(audio_data, dtype=np.int16)
+
+        # ステレオの場合はモノラルに変換
+        if self.channels == 2 and len(audio_array) > 0:
+            # ステレオデータを2チャンネルに分割してモノラルに変換
+            audio_array = audio_array.reshape(-1, 2).mean(axis=1).astype(np.int16)
 
         # バッファに追加
         for sample in audio_array:
@@ -80,7 +85,7 @@ class AudioBuffer:
         # WAVファイルとしてバイト列に変換
         wav_buffer = io.BytesIO()
         with wave.open(wav_buffer, 'wb') as wav_file:
-            wav_file.setnchannels(self.channels)
+            wav_file.setnchannels(1)  # モノラル
             wav_file.setsampwidth(2)  # 16-bit = 2 bytes
             wav_file.setframerate(self.sample_rate)
             wav_file.writeframes(audio_data.tobytes())
@@ -106,3 +111,130 @@ class AudioBuffer:
             データが溜まっている場合True
         """
         return self.get_duration() >= required_duration
+
+
+class AudioBuffer:
+    """複数ユーザーの音声データを管理するクラス"""
+
+    def __init__(self, sample_rate: int = 48000, channels: int = 2, buffer_duration: int = 60):
+        """
+        Args:
+            sample_rate: サンプリングレート (Hz)
+            channels: チャンネル数
+            buffer_duration: バッファ保持時間 (秒)
+        """
+        self.sample_rate = sample_rate
+        self.channels = channels
+        self.buffer_duration = buffer_duration
+
+        # ユーザーID -> UserAudioBuffer のマップ
+        self.user_buffers: Dict[int, UserAudioBuffer] = {}
+
+    def add_audio(self, user_id: int, audio_data: bytes) -> None:
+        """
+        ユーザーの音声データをバッファに追加
+
+        Args:
+            user_id: ユーザーID
+            audio_data: PCM音声データ（int16形式のバイト列）
+        """
+        # ユーザーのバッファが存在しない場合は作成
+        if user_id not in self.user_buffers:
+            self.user_buffers[user_id] = UserAudioBuffer(
+                sample_rate=self.sample_rate,
+                channels=self.channels,
+                buffer_duration=self.buffer_duration,
+            )
+
+        # バッファに追加
+        self.user_buffers[user_id].add_audio(audio_data)
+
+    def get_user_ids(self) -> List[int]:
+        """
+        現在バッファに音声が保存されているユーザーIDのリストを取得
+
+        Returns:
+            ユーザーIDのリスト
+        """
+        return list(self.user_buffers.keys())
+
+    def get_audio(self, user_id: int, duration: Optional[int] = None) -> np.ndarray:
+        """
+        特定ユーザーのバッファから音声データを取得
+
+        Args:
+            user_id: ユーザーID
+            duration: 取得する時間（秒）。Noneの場合は全データ
+
+        Returns:
+            音声データ（numpy配列）
+        """
+        if user_id not in self.user_buffers:
+            return np.array([], dtype=np.int16)
+
+        return self.user_buffers[user_id].get_audio(duration)
+
+    def get_wav_bytes(self, user_id: int, duration: Optional[int] = None) -> bytes:
+        """
+        特定ユーザーのバッファからWAV形式のバイト列を取得
+
+        Args:
+            user_id: ユーザーID
+            duration: 取得する時間（秒）。Noneの場合は全データ
+
+        Returns:
+            WAV形式のバイト列
+        """
+        if user_id not in self.user_buffers:
+            # 空のWAVファイルを返す
+            wav_buffer = io.BytesIO()
+            with wave.open(wav_buffer, 'wb') as wav_file:
+                wav_file.setnchannels(1)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(self.sample_rate)
+            return wav_buffer.getvalue()
+
+        return self.user_buffers[user_id].get_wav_bytes(duration)
+
+    def get_duration(self, user_id: int) -> float:
+        """
+        特定ユーザーの現在バッファに保存されている音声の長さ（秒）を取得
+
+        Args:
+            user_id: ユーザーID
+
+        Returns:
+            音声の長さ（秒）
+        """
+        if user_id not in self.user_buffers:
+            return 0.0
+
+        return self.user_buffers[user_id].get_duration()
+
+    def is_ready(self, user_id: int, required_duration: int = 60) -> bool:
+        """
+        特定ユーザーの指定時間分のデータが溜まっているかチェック
+
+        Args:
+            user_id: ユーザーID
+            required_duration: 必要な時間（秒）
+
+        Returns:
+            データが溜まっている場合True
+        """
+        if user_id not in self.user_buffers:
+            return False
+
+        return self.user_buffers[user_id].is_ready(required_duration)
+
+    def clear(self, user_id: Optional[int] = None) -> None:
+        """
+        バッファをクリア
+
+        Args:
+            user_id: ユーザーID。Noneの場合は全ユーザーのバッファをクリア
+        """
+        if user_id is None:
+            self.user_buffers.clear()
+        elif user_id in self.user_buffers:
+            self.user_buffers[user_id].clear()
