@@ -49,18 +49,33 @@ CMAKE_ARGS="-DGGML_HIP=on -DCMAKE_PREFIX_PATH=/opt/rocm-6.1.5 -DROCM_PATH=/opt/r
   poetry run pip install llama-cpp-python --upgrade --force-reinstall --no-cache-dir --verbose
 ```
 
-### 3. Discord設定
+### 3. 環境変数の設定
 
-デフォルトでは `src/config.py` にハードコードされた設定が使用されますが、環境変数で上書き可能です。
-
-環境変数を使用する場合は `.env` ファイルを作成してください:
+`.env.example` をコピーして `.env` ファイルを作成し、Discord接続情報を設定してください:
 
 ```bash
-# .env ファイル（オプション）
-DISCORD_TOKEN=your_discord_bot_token
-DISCORD_GUILD_ID=your_guild_id
-DISCORD_VOICE_CHANNEL_ID=your_voice_channel_id
+# .env.example をコピー
+cp .env.example .env
+
+# .env ファイルを編集
+# DISCORD_TOKEN, DISCORD_GUILD_ID, DISCORD_VOICE_CHANNEL_ID を設定
 ```
+
+`.env` ファイルの例:
+
+```bash
+# Discord接続設定（必須）
+DISCORD_TOKEN=your_discord_bot_token_here
+DISCORD_GUILD_ID=your_guild_id_here
+DISCORD_VOICE_CHANNEL_ID=your_voice_channel_id_here
+
+# モデル設定（オプション）
+# WHISPER_MODEL=kotoba-tech/kotoba-whisper-v1.1
+# QWEN_MODEL=Qwen/Qwen2.5-32B-Instruct-GGUF
+# QWEN_MODEL_FILE=qwen2.5-32b-instruct-q5_k_m.gguf
+```
+
+**注意**: `.env` ファイルには秘密情報が含まれるため、Gitにコミットしないでください（既に `.gitignore` に含まれています）。
 
 ## 実行
 
@@ -85,7 +100,7 @@ python -m src.main
 
 | 環境変数 | デフォルト値 | 説明 |
 |---------|------------|------|
-| `DISCORD_TOKEN` | (ハードコード値) | Discordボットトークン |
+| `DISCORD_TOKEN` | **必須** | Discordボットトークン |
 | `DISCORD_GUILD_ID` | **必須** | サーバーID |
 | `DISCORD_VOICE_CHANNEL_ID` | **必須** | ボイスチャンネルID |
 | `WHISPER_MODEL` | kotoba-tech/kotoba-whisper-v1.1 | STTモデル名 |
