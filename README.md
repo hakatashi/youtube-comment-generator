@@ -49,33 +49,7 @@ CMAKE_ARGS="-DGGML_HIP=on -DCMAKE_PREFIX_PATH=/opt/rocm-6.1.5 -DROCM_PATH=/opt/r
   poetry run pip install llama-cpp-python --upgrade --force-reinstall --no-cache-dir --verbose
 ```
 
-### 3. モデルのダウンロード
-
-#### Qwen2.5-32B-Instruct (GGUF形式)
-
-```bash
-mkdir -p models
-cd models
-
-# Hugging Face から GGUF モデルをダウンロード
-# 方法1: huggingface-cli を使用
-poetry run pip install huggingface-hub[cli]
-poetry run huggingface-cli download Qwen/Qwen2.5-32B-Instruct-GGUF \
-  qwen2.5-32b-instruct-q5_k_m.gguf \
-  --local-dir . \
-  --local-dir-use-symlinks False
-
-# 方法2: wget を使用（直接ダウンロード）
-wget https://huggingface.co/Qwen/Qwen2.5-32B-Instruct-GGUF/resolve/main/qwen2.5-32b-instruct-q5_k_m.gguf
-
-cd ..
-```
-
-#### Kotoba-Whisper
-
-Kotoba-Whisper は初回実行時に自動的にダウンロードされます。
-
-### 4. Discord設定
+### 3. Discord設定
 
 デフォルトでは `src/config.py` にハードコードされた設定が使用されますが、環境変数で上書き可能です。
 
@@ -98,6 +72,12 @@ poetry run python -m src.main
 poetry shell
 python -m src.main
 ```
+
+**注意**: 初回実行時は以下のモデルが自動的にダウンロードされます：
+- **Qwen2.5-32B-Instruct** (約20GB) - Hugging Face Hub からダウンロード
+- **Kotoba-Whisper v1.1** (約3GB) - Hugging Face Hub からダウンロード
+
+ダウンロードには時間がかかる場合があります。`models/` ディレクトリに保存されます。
 
 ## 設定オプション
 
@@ -125,6 +105,7 @@ youtube-comment-generator/
 │   ├── __init__.py
 │   ├── main.py              # エントリーポイント
 │   ├── config.py            # 設定管理
+│   ├── model_downloader.py  # モデル自動ダウンロード
 │   ├── discord_client.py    # Discord接続・音声受信
 │   ├── audio_buffer.py      # 音声バッファ管理
 │   ├── speech_to_text.py    # Speech-to-Text (Kotoba-Whisper)

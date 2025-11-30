@@ -9,6 +9,7 @@ from .audio_buffer import AudioBuffer
 from .comment_generator import CommentGenerator
 from .config import AppConfig
 from .discord_client import start_discord_client
+from .model_downloader import ModelDownloader
 from .speech_to_text import SpeechToText
 
 # ロギング設定
@@ -59,16 +60,13 @@ class CommentGeneratorApp:
 
         # LLMの初期化
         logger.info("Loading LLM for comment generation...")
-        model_path = (
-            self.config.model.models_dir / self.config.model.qwen_model_file
-        )
 
-        if not model_path.exists():
-            logger.error(f"Model file not found: {model_path}")
-            logger.error(
-                f"Please download the model and place it at {model_path}"
-            )
-            sys.exit(1)
+        # モデルファイルが存在することを確認（なければダウンロード）
+        model_path = ModelDownloader.ensure_qwen_model(
+            repo_id=self.config.model.qwen_model,
+            filename=self.config.model.qwen_model_file,
+            models_dir=self.config.model.models_dir,
+        )
 
         self.comment_gen = CommentGenerator(model_path=model_path)
         logger.info("LLM loaded")
