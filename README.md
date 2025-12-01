@@ -6,10 +6,12 @@ Discord のボイスチャンネルから音声をリアルタイムで取得し
 
 - Discordの特定のボイスチャンネルに接続し、音声をユーザーごとに分離して記録
 - 30秒ごとに以下の処理を各ユーザーごとに実行:
-  1. 直近60秒分の音声をSpeech-to-Textモデル（Kotoba-Whisper）でテキスト化
+  1. 直近60秒分の音声をSpeech-to-Textモデル（faster-whisper版 Kotoba-Whisper）でテキスト化
   2. テキストを元にLLM（Qwen3-32B）でYouTube風コメントを10件生成
-  3. 生成したコメントをコンソールに出力
+  3. 生成したコメントをFirestoreに保存（メタデータ付き）
+  4. Discordのテキストチャンネルに投稿
 - BOTユーザーなど、特定のユーザーの音声を無視する機能
+- Webビューアーで生成されたコメントを閲覧可能
 
 ## システム要件
 
@@ -21,10 +23,10 @@ Discord のボイスチャンネルから音声をリアルタイムで取得し
 
 ## 使用モデル
 
-- **Speech-to-Text**: Kotoba-Whisper v2.2 (CPU動作、約3GB RAM)
+- **Speech-to-Text**: faster-whisper版 Kotoba-Whisper v2.0 (CPU動作、5.6倍高速化)
 - **LLM**: Qwen3-32B (Q5_K_M量子化, 約24GB VRAM)
 
-LLMはGPUで動作し、約24GBのVRAMを使用します。Speech-to-TextはROCm互換性の問題により、CPUで動作します。
+LLMはGPUで動作し、約24GBのVRAMを使用します。Speech-to-TextはCTranslate2ベースのfaster-whisperを使用してCPUで高速に動作します（従来比5.6倍高速）。
 
 ## セットアップ
 
@@ -61,7 +63,7 @@ CMAKE_ARGS="-DGGML_HIP=on -DCMAKE_PREFIX_PATH=/opt/rocm-6.1.5 -DROCM_PATH=/opt/r
 cp .env.example .env
 
 # .env ファイルを編集
-# DISCORD_TOKEN, DISCORD_GUILD_ID, DISCORD_VOICE_CHANNEL_ID を設定
+# DISCORD_TOKEN, DISCORD_GUILD_ID, DISCORD_VOICE_CHANNEL_ID, DISCORD_TEXT_CHANNEL_ID を設定
 ```
 
 `.env` ファイルの例:
@@ -71,17 +73,24 @@ cp .env.example .env
 DISCORD_TOKEN=your_discord_bot_token_here
 DISCORD_GUILD_ID=your_guild_id_here
 DISCORD_VOICE_CHANNEL_ID=your_voice_channel_id_here
+DISCORD_TEXT_CHANNEL_ID=your_text_channel_id_here
 
 # 無視するユーザーIDのリスト（カンマ区切り、オプション）
 DISCORD_IGNORED_USER_IDS=123456789012345678,123456789012345679
 
 # モデル設定（オプション）
-# WHISPER_MODEL=kotoba-tech/kotoba-whisper-v1.1
+# WHISPER_MODEL=kotoba-tech/kotoba-whisper-v2.0-faster
 # QWEN_MODEL=Qwen/Qwen3-32B-GGUF
 # QWEN_MODEL_FILE=Qwen3-32B-Q5_K_M.gguf
 ```
 
 **注意**: `.env` ファイルには秘密情報が含まれるため、Gitにコミットしないでください（既に `.gitignore` に含まれています）。
+
+### 4. Firebase Admin SDK 認証鍵の配置
+
+Firebase Admin SDK の認証鍵ファイル（`*-firebase-adminsdk-*.json`）をプロジェクトのルートディレクトリに配置してください。このファイルはFirestoreへのコメント保存に使用されます。
+
+**注意**: この認証鍵ファイルは `.gitignore` に含まれており、Gitにコミットされません。
 
 ## 実行
 
@@ -96,9 +105,9 @@ python -m src.main
 
 **注意**: 初回実行時は以下のモデルが自動的にダウンロードされます：
 - **Qwen3-32B** (約20GB) - Hugging Face Hub からダウンロード
-- **Kotoba-Whisper v2.2** (約3GB) - Hugging Face Hub からダウンロード
+- **faster-whisper版 Kotoba-Whisper v2.0** (約3GB) - Hugging Face Hub からダウンロード
 
-ダウンロードには時間がかかる場合があります。Qwen3-32Bは`models/`ディレクトリに、Kotoba-WhisperはHugging Face キャッシュに保存されます。
+ダウンロードには時間がかかる場合があります。Qwen3-32Bは`models/`ディレクトリに、faster-whisperモデルは`models/faster-whisper/`ディレクトリに保存されます。
 
 ## 設定オプション
 
@@ -109,8 +118,9 @@ python -m src.main
 | `DISCORD_TOKEN` | **必須** | Discordボットトークン |
 | `DISCORD_GUILD_ID` | **必須** | サーバーID |
 | `DISCORD_VOICE_CHANNEL_ID` | **必須** | ボイスチャンネルID |
+| `DISCORD_TEXT_CHANNEL_ID` | **必須** | テキストチャンネルID（コメント投稿先） |
 | `DISCORD_IGNORED_USER_IDS` | (空) | 無視するユーザーIDのリスト（カンマ区切り） |
-| `WHISPER_MODEL` | kotoba-tech/kotoba-whisper-v2.2 | STTモデル名 |
+| `WHISPER_MODEL` | kotoba-tech/kotoba-whisper-v2.0-faster | STTモデル名 |
 | `QWEN_MODEL` | Qwen/Qwen3-32B-GGUF | LLMモデル名 |
 | `QWEN_MODEL_FILE` | Qwen3-32B-Q5_K_M.gguf | GGUFファイル名 |
 | `DEVICE` | cuda | 使用デバイス |
@@ -126,17 +136,31 @@ python -m src.main
 youtube-comment-generator/
 ├── src/
 │   ├── __init__.py
-│   ├── main.py              # エントリーポイント
-│   ├── config.py            # 設定管理
-│   ├── model_downloader.py  # モデル自動ダウンロード
-│   ├── discord_client.py    # Discord接続・音声受信
-│   ├── audio_buffer.py      # ユーザーごとの音声バッファ管理
-│   ├── speech_to_text.py    # Speech-to-Text (Kotoba-Whisper)
-│   └── comment_generator.py # コメント生成 (Qwen3-32B)
-├── models/                  # モデルファイル（.gitignore）
-├── pyproject.toml           # Poetry設定
-├── .env                     # 環境変数（.gitignore）
-├── .env.example             # 環境変数テンプレート
+│   ├── main.py                  # エントリーポイント
+│   ├── config.py                # 設定管理
+│   ├── model_downloader.py      # モデル自動ダウンロード
+│   ├── discord_client.py        # Discord接続・音声受信
+│   ├── audio_buffer.py          # ユーザーごとの音声バッファ管理
+│   ├── speech_to_text_faster.py # Speech-to-Text (faster-whisper)
+│   ├── comment_generator.py     # コメント生成 (Qwen3-32B)
+│   └── firestore_client.py      # Firestore連携
+├── viewer/                      # Webビューアー（Solid.js）
+│   ├── src/
+│   │   ├── app.tsx
+│   │   ├── lib/
+│   │   │   ├── firebase.ts      # Firebase設定
+│   │   │   └── schema.d.ts      # Firestoreスキーマ
+│   │   └── routes/
+│   │       └── index.tsx        # メインページ
+│   ├── package.json
+│   └── app.config.ts
+├── models/                      # モデルファイル（.gitignore）
+├── debug/                       # デバッグ用音声ファイル（.gitignore）
+├── firebase.json                # Firebase設定
+├── firestore.rules              # Firestoreセキュリティルール
+├── pyproject.toml               # Poetry設定
+├── .env                         # 環境変数（.gitignore）
+├── .env.example                 # 環境変数テンプレート
 └── README.md
 ```
 
@@ -151,9 +175,23 @@ youtube-comment-generator/
 
 ### モデル
 
-- **Kotoba-Whisper**: 日本語音声認識に特化したWhisperモデル
+- **faster-whisper版 Kotoba-Whisper**: 日本語音声認識に特化したWhisperモデル（CTranslate2ベース）
 - **Qwen3-32B**: Alibabaが開発した大規模言語モデル（GGUF形式で量子化）
 - Qwen3の`<think>`ブロックは自動的に除去されます
+
+### Firestoreへの保存
+
+生成されたコメントは以下のメタデータと共にFirestoreに保存されます：
+
+- `comment`: 生成されたコメント
+- `prompt`: 使用したプロンプト
+- `transcription`: 結合された文字起こしテキスト
+- `user_transcriptions`: ユーザーごとの発言リスト（例: `["ユーザー名: 発言内容"]`）
+- `created_at`: 生成時刻（Timestamp）
+
+### デバッグ音声ファイル
+
+音声処理時のデバッグ用に、各ユーザーの60秒分の音声が `debug/` ディレクトリにWAVファイルとして保存されます。
 
 ## トラブルシューティング
 
@@ -214,7 +252,42 @@ WHISPER_MODEL=openai/whisper-small
 
 - py-cord の音声受信機能は実験的機能です
 - ffmpeg がインストールされているか確認: `ffmpeg -version`
-- デバッグ用WAVファイル（`debug_audio_user*.wav`）を確認
+- デバッグ用WAVファイル（`debug/debug_audio_user*.wav`）を確認
+
+## Webビューアー
+
+生成されたコメントは、Solid.jsで構築されたWebビューアーで閲覧できます。
+
+### ビューアーのセットアップ
+
+```bash
+cd viewer
+npm install
+```
+
+### 開発モードで起動
+
+```bash
+cd viewer
+npm run dev
+```
+
+ブラウザで http://localhost:3000 にアクセスすると、Firestoreに保存されたコメントが新しい順に表示されます。
+
+### Firebase Hostingへのデプロイ
+
+```bash
+# Firestoreルールのデプロイ
+firebase deploy --only firestore:rules
+
+# ビューアーのビルドとデプロイ
+firebase deploy --only hosting
+
+# すべてをデプロイ
+firebase deploy
+```
+
+デプロイ後、`https://vtuber-comment-generator.web.app` でビューアーにアクセスできます。
 
 ### サンプリングレートが間違っている
 
