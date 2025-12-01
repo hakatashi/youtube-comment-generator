@@ -14,8 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -212,3 +212,20 @@ models/
 .env.local
 comments.txt
 debug_audio_*.wav
+debug/
+
+# Firebase Admin SDK key
+*-firebase-adminsdk-*.json
+
+# Viewer build output
+viewer/.output/
+viewer/.vinxi/
+viewer/node_modules/
+
+# Test files
+test_*.py
+run_with_rocm.sh
+test_with_rocm_env.sh
+
+# Firebase cache
+.firebase/
