@@ -44,8 +44,19 @@ class AudioBufferSink(discord.sinks.Sink):
                 self.audio_buffer.add_audio(user_id, data)
 
                 # ユーザー名を保存（初回のみ）
-                if hasattr(user, 'name') and user_id not in self.audio_buffer.user_names:
-                    self.audio_buffer.set_user_name(user_id, user.name)
+                # userオブジェクトから適切にユーザー名を取得
+                if user_id not in self.audio_buffer.user_names:
+                    user_name = None
+                    if hasattr(user, 'display_name'):
+                        user_name = user.display_name
+                    elif hasattr(user, 'name'):
+                        user_name = user.name
+                    elif hasattr(user, 'global_name'):
+                        user_name = user.global_name
+
+                    if user_name:
+                        self.audio_buffer.set_user_name(user_id, user_name)
+                        logger.info(f"Registered user {user_id} as '{user_name}'")
             except Exception as e:
                 logger.warning(f"Failed to add audio data for user {user_id}: {e}")
                 return
