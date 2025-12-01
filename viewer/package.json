@@ -1,0 +1,21 @@
+{
+	"name": "vtuber-comment-viewer",
+	"type": "module",
+	"scripts": {
+		"dev": "vinxi dev",
+		"build": "vinxi build",
+		"start": "vinxi start"
+	},
+	"dependencies": {
+		"@solidjs/router": "^0.15.4",
+		"@solidjs/start": "^1.2.0",
+		"firebase": "^12.6.0",
+		"solid-firebase": "^0.3.0",
+		"solid-js": "^1.9.10",
+		"vinxi": "^0.5.8",
+		"vite-plugin-solid": "^2.11.10"
+	},
+	"engines": {
+		"node": ">=22"
+	}
+}
