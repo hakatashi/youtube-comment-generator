@@ -19,7 +19,11 @@ accelerate = "^0.30.0"
 huggingface-hub = "^0.36.0"
 python-dotenv = "^1.0.0"
 torch = {version = "2.6.0+rocm6.1", source = "torch_rocm6.1"}
+torchvision = "^0.21.0"
 pytorch-triton-rocm = {version = "3.2.0", source = "pytorch"}
+qwen-omni-utils = "^0.0.8"
+autoawq = "^0.2.9"
+compressed-tensors = "^0.12.2"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
