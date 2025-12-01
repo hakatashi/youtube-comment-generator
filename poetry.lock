@@ -1532,24 +1532,24 @@ test = ["pytest", "pytest-instafail", "pytest-subtests", "pytest-xdist", "pywin3
 
 [[package]]
 name = "py-cord"
-version = "2.7.0rc1"
+version = "2.7.0rc2"
 description = "A Python wrapper for the Discord API"
 optional = false
-python-versions = ">=3.9"
+python-versions = "<3.14,>=3.9"
 groups = ["main"]
 files = [
-    {file = "py_cord-2.7.0rc1-py3-none-any.whl", hash = "sha256:c4c3b930ad3572ebf5827c5f473942a577841d19281bdf5a8383cfee210ec202"},
-    {file = "py_cord-2.7.0rc1.tar.gz", hash = "sha256:cca759ebb0537cd3b69cd16e26287e667338a5283411c73ce61fa8f9892a7b40"},
+    {file = "py_cord-2.7.0rc2-py3-none-any.whl", hash = "sha256:097b4a3c4ff419591a72422e02d9097f56422eeb18a8217cb277986a36288f4f"},
+    {file = "py_cord-2.7.0rc2.tar.gz", hash = "sha256:988e245984f61c522935315fb859a8ca9ee492dd9298f4ec965a882b2f256172"},
 ]
 
 [package.dependencies]
 aiohttp = ">=3.6.0,<4.0"
-typing_extensions = ">=4.5.0,<5"
+typing_extensions = ">=4.12.0,<5"
 
 [package.extras]
-docs = ["furo (==2024.8.6)", "levenshtein (==0.27.1)", "myst-parser[linkify] (==4.0.0)", "sphinx (==8.0.2)", "sphinx-autodoc-typehints (==2.2.3)", "sphinx-copybutton (==0.5.2)", "sphinx-intl (==2.3.2)", "sphinxcontrib-websupport (==2.0.0)", "sphinxcontrib_trio (==1.1.2)", "sphinxext-opengraph (==0.12.0)", "typing_extensions (==4.15.0)"]
+docs = ["furo (==2024.8.6)", "levenshtein (==0.27.1)", "myst-parser[linkify] (==4.0.1)", "sphinx (==8.2.3)", "sphinx-autodoc-typehints (==3.5.2)", "sphinx-copybutton (==0.5.2)", "sphinx-intl (==2.3.2)", "sphinxcontrib-websupport (==2.0.0)", "sphinxcontrib_trio (==1.1.2)", "sphinxext-opengraph (==0.13.0)", "typing_extensions (==4.15.0)"]
 speed = ["aiohttp[speedups]", "msgspec (>=0.19.0,<0.20.0)"]
-voice = ["PyNaCl (>=1.3.0,<1.6)"]
+voice = ["PyNaCl (>=1.6,<1.7)"]
 
 [[package]]
 name = "pycparser"
@@ -2411,5 +2411,5 @@ propcache = ">=0.2.1"
 
 [metadata]
 lock-version = "2.1"
-python-versions = "^3.10"
-content-hash = "6bfbf16253c5a3dd87e1cae71cb05a317aaae53295acc39f30d34bef0cd2dbd6"
+python-versions = "^3.10,<3.14"
+content-hash = "1a8f5d19f8a55051ce8c14fc1b5601ce30a703e6b71855b8198c98c38841e365"

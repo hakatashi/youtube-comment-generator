@@ -11,6 +11,7 @@ class DiscordConfig:
     token: str
     guild_id: int
     voice_channel_id: int
+    text_channel_id: int
     ignored_user_ids: List[int]
 
 
@@ -47,7 +48,7 @@ class AppConfig:
         import sys
 
         # 必須の環境変数をチェック
-        required_vars = ["DISCORD_TOKEN", "DISCORD_GUILD_ID", "DISCORD_VOICE_CHANNEL_ID"]
+        required_vars = ["DISCORD_TOKEN", "DISCORD_GUILD_ID", "DISCORD_VOICE_CHANNEL_ID", "DISCORD_TEXT_CHANNEL_ID"]
         missing_vars = [var for var in required_vars if not os.getenv(var)]
 
         if missing_vars:
@@ -69,6 +70,7 @@ class AppConfig:
             token=os.getenv("DISCORD_TOKEN"),
             guild_id=int(os.getenv("DISCORD_GUILD_ID")),
             voice_channel_id=int(os.getenv("DISCORD_VOICE_CHANNEL_ID")),
+            text_channel_id=int(os.getenv("DISCORD_TEXT_CHANNEL_ID")),
             ignored_user_ids=ignored_user_ids,
         )
 

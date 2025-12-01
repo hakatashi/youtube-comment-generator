@@ -47,11 +47,12 @@ class CommentGenerator:
     def _load_model(self) -> None:
         """モデルをロード"""
         try:
+            logger.info(f"Loading LLM model with GPU layers: {self.n_gpu_layers}")
             self.llm = Llama(
                 model_path=str(self.model_path),
                 n_gpu_layers=self.n_gpu_layers,
                 n_ctx=self.n_ctx,
-                verbose=False,
+                verbose=True,
             )
             logger.info("LLM loaded successfully")
         except Exception as e:
@@ -123,7 +124,7 @@ class CommentGenerator:
         """
         prompt = f"""以下のテキストは、とあるVTuberのライブ配信の直近60秒の配信内容の文字起こしです。
 
-この文字起こしを参考にして、この場面で投稿されていそうなYouTubeのコメントを{num_comments}件考えてください。
+この文字起こしと、後に挙げる「実際のVTuberのYouTubeコメント例」を参考にして、この場面で投稿されていそうなYouTubeのコメントを{num_comments}件考えてください。
 
 コメントの内容は以下のようなバリエーションを含めてください：
 - 配信内容に直接関連するコメント（「草」「すごい」「かわいい」など）
@@ -131,8 +132,9 @@ class CommentGenerator:
 - 応援系（「がんばれ！」「いいぞ！」など）
 - 初見・挨拶系（「初見です」「こんにちは」など）
 - 質問や相槌（「なるほど」「それな」など）
+- 批判的、皮肉的なコメントも適度に含める
 
-コメントは1行ずつ、番号なしで出力してください。各コメントは短く、自然な口語表現で書いてください。"""
+コメントは1行ずつ、番号なしで出力してください。各コメントは短く、2～20文字程度の長さで出力してください。"""
 
         # 直近のコメント履歴がある場合は追加
         if self.comment_history:
@@ -149,7 +151,60 @@ class CommentGenerator:
 
 {transcription}
 
-## YouTubeコメント（{num_comments}件）"""
+## 実際のVTuberのYouTubeコメント例
+以下は実際のVTuber配信のコメント例です。これらを参考にしてコメントを生成してください。
+
+* かわいい
+* 草
+* かわいいw
+* スバルww
+* 草
+* 一般通過アヒル
+* やはりこの台うめえな
+* おわったか
+* おわったー
+* ドドド！
+* あらら
+* こんばんはー
+* きたあああああああああああああ
+* こいこい！
+* きちゃあああああ！
+* 頼むぞー
+* 全員同じ顔してやばい
+* んー。あんまり冒険してもね？
+* くそざこwww
+* そらあず助かる
+* 名前が笑うw
+* 調子w
+* かわいいなw
+* かわいい反応やなwww
+* 草草の草
+* いい悲鳴w
+* くさ
+* そううまくはいかないよな
+* ひどすぎるw
+* 反面教師w
+* どんくさ～～
+* いい顔しとる
+* 威嚇でしょ
+* 顔いかつい
+* あったなあw
+* ﾄﾞﾝﾄﾞﾝ
+* 懐かしいwww
+* うっま
+* 足短くね？
+* 綺麗すぎる
+* あっ
+* 歩き方がいい
+* もうダメだ
+* To be continued
+* 草
+* あー
+* そもそもなんだな
+* おもしれー女
+* 良すぎる
+* こっちみんな
+"""
 
         return prompt
 
@@ -215,3 +270,39 @@ class CommentGenerator:
 
         except Exception as e:
             logger.error(f"Failed to save comments to file: {e}")
+
+if __name__ == "__main__":
+    # テストコード
+    import os
+    from pathlib import Path
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
+    logger = logging.getLogger(__name__)
+
+    # モデルパス（適宜変更してください）
+    model_path = Path("models/Qwen3-32B-Q5_K_M.gguf")
+
+    if not model_path.exists():
+        logger.error(f"Model not found: {model_path}")
+        exit(1)
+
+    # コメントジェネレーターの初期化
+    comment_gen = CommentGenerator(model_path=model_path)
+
+    # テスト用の文字起こしテキスト
+    test_transcription = """
+今日はみんなでマイクラをやっていきたいと思います！
+えっと、まずは木を集めましょうか。
+おっ、村を発見しました！すごい！
+ダイヤ見つけた！やったー！
+"""
+
+    logger.info("Generating comments...")
+    comments = comment_gen.generate_comments(test_transcription, num_comments=10)
+
+    logger.info("Generated comments:")
+    for i, comment in enumerate(comments, 1):
+        logger.info(f"{i}. {comment}")

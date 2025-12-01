@@ -76,13 +76,14 @@ class SpeechToText:
                 audio_data = audio_data.mean(axis=1)
 
             # 音声認識を実行
+            # 30秒を超える音声の場合はreturn_timestamps=Trueが必要
             result = self.pipe(
                 audio_data,
                 generate_kwargs={
                     "language": "ja",
                     "task": "transcribe",
                 },
-                return_timestamps=False,
+                return_timestamps=True,
             )
 
             text = result["text"]
@@ -120,13 +121,14 @@ class SpeechToText:
                 audio_data = signal.resample(audio_data, num_samples)
 
             # 音声認識を実行
+            # 30秒を超える音声の場合はreturn_timestamps=Trueが必要
             result = self.pipe(
                 audio_data,
                 generate_kwargs={
                     "language": "ja",
                     "task": "transcribe",
                 },
-                return_timestamps=False,
+                return_timestamps=True,
             )
 
             text = result["text"]

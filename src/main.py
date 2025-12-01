@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -46,6 +47,8 @@ class CommentGeneratorApp:
         self.stt: SpeechToText
         self.comment_gen: CommentGenerator
         self.discord_bot = None
+        # CPU/GPU集約的な処理用のスレッドプール
+        self.executor = ThreadPoolExecutor(max_workers=2)
 
     async def initialize(self) -> None:
         """初期化処理"""
@@ -58,14 +61,6 @@ class CommentGeneratorApp:
             buffer_duration=self.config.audio.buffer_duration,
         )
         logger.info("Audio buffer initialized")
-
-        # Speech-to-Text モデルの初期化
-        logger.info("Loading Speech-to-Text model...")
-        self.stt = SpeechToText(
-            model_name=self.config.model.whisper_model,
-            device=self.config.model.device,
-        )
-        logger.info("Speech-to-Text model loaded")
 
         # LLMの初期化
         logger.info("Loading LLM for comment generation...")
@@ -80,6 +75,14 @@ class CommentGeneratorApp:
         self.comment_gen = CommentGenerator(model_path=model_path)
         logger.info("LLM loaded")
 
+        # Speech-to-Text モデルの初期化
+        logger.info("Loading Speech-to-Text model...")
+        self.stt = SpeechToText(
+            model_name=self.config.model.whisper_model,
+            device=self.config.model.device,
+        )
+        logger.info("Speech-to-Text model loaded")
+
         # Discordクライアントの起動
         logger.info("Starting Discord client...")
         if self.config.discord.ignored_user_ids:
@@ -88,6 +91,7 @@ class CommentGeneratorApp:
             token=self.config.discord.token,
             guild_id=self.config.discord.guild_id,
             voice_channel_id=self.config.discord.voice_channel_id,
+            text_channel_id=self.config.discord.text_channel_id,
             audio_buffer=self.audio_buffer,
             ignored_user_ids=self.config.discord.ignored_user_ids,
         )
@@ -95,12 +99,15 @@ class CommentGeneratorApp:
 
         logger.info("Initialization complete!")
 
-    async def process_user_audio(self, user_id: int) -> None:
+    async def process_user_audio(self, user_id: int) -> tuple[str, str]:
         """
-        特定ユーザーの音声を処理してコメントを生成
+        特定ユーザーの音声を処理して文字起こしを返す
 
         Args:
             user_id: ユーザーID
+
+        Returns:
+            (ユーザー名, 文字起こしテキスト) のタプル
         """
         logger.info(f"Processing audio for user {user_id}...")
 
@@ -109,7 +116,7 @@ class CommentGeneratorApp:
 
         if len(audio_data) == 0:
             logger.warning(f"User {user_id}: No audio data in buffer")
-            return
+            return ("", "")
 
         logger.info(f"User {user_id}: Retrieved {len(audio_data)} audio samples")
 
@@ -121,31 +128,27 @@ class CommentGeneratorApp:
             f.write(wav_bytes)
         logger.info(f"User {user_id}: Saved debug audio to {debug_wav_path}")
 
-        # Speech-to-Text で文字起こし
+        # Speech-to-Text で文字起こし（別スレッドで実行）
         logger.info(f"User {user_id}: Transcribing audio...")
-        transcription = self.stt.transcribe_from_array(
-            audio_data, sample_rate=self.config.audio.sample_rate
+        loop = asyncio.get_event_loop()
+        transcription = await loop.run_in_executor(
+            self.executor,
+            self.stt.transcribe_from_array,
+            audio_data,
+            self.config.audio.sample_rate
         )
+
+        # 「ごめん」を除去（無音部分の誤認識対策）
+        transcription = transcription.replace("ごめん", "").replace("視野", "").replace("児童", "").replace("はい", "").strip()
 
         if not transcription.strip():
             logger.warning(f"User {user_id}: Transcription is empty")
-            return
+            return ("", "")
 
-        logger.info(f"User {user_id}: Transcription: {transcription}")
+        user_name = self.audio_buffer.get_user_name(user_id)
+        logger.info(f"User {user_id} ({user_name}): Transcription: {transcription}")
 
-        # コメント生成
-        logger.info(f"User {user_id}: Generating comments...")
-        comments = self.comment_gen.generate_comments(
-            transcription, num_comments=10
-        )
-
-        # コメントを出力
-        print("\n" + "=" * 60)
-        print(f"生成されたコメント (User {user_id}):")
-        print("=" * 60)
-        for i, comment in enumerate(comments, 1):
-            print(f"{i:2d}. {comment}")
-        print("=" * 60 + "\n")
+        return (user_name, transcription)
 
     async def process_audio_and_generate_comments(self) -> None:
         """全ユーザーの音声処理とコメント生成を実行"""
@@ -160,7 +163,8 @@ class CommentGeneratorApp:
 
         logger.info(f"Found {len(user_ids)} user(s) with audio data: {user_ids}")
 
-        # 各ユーザーごとに処理
+        # 各ユーザーの音声を文字起こし
+        user_transcriptions = []
         for user_id in user_ids:
             # 十分なデータがあるユーザーのみ処理
             if not self.audio_buffer.is_ready(user_id, required_duration=60):
@@ -170,7 +174,41 @@ class CommentGeneratorApp:
                 )
                 continue
 
-            await self.process_user_audio(user_id)
+            user_name, transcription = await self.process_user_audio(user_id)
+            if transcription:
+                user_transcriptions.append(f"{user_name}: {transcription}")
+
+        # すべてのユーザーの発言を結合
+        if not user_transcriptions:
+            logger.warning("No transcriptions available for comment generation")
+            return
+
+        combined_transcript = "\n".join(user_transcriptions)
+        logger.info(f"Combined transcript:\n{combined_transcript}")
+
+        # コメント生成（別スレッドで実行）
+        logger.info("Generating comments from all users' speech...")
+        loop = asyncio.get_event_loop()
+        comments = await loop.run_in_executor(
+            self.executor,
+            self.comment_gen.generate_comments,
+            combined_transcript,
+            10  # num_comments
+        )
+
+        # コメントを出力
+        print("\n" + "=" * 60)
+        print("生成されたコメント:")
+        print("=" * 60)
+        for i, comment in enumerate(comments, 1):
+            print(f"{i:2d}. {comment}")
+        print("=" * 60 + "\n")
+
+        # Discordのテキストチャンネルにコメントを投稿
+        if self.discord_bot and comments:
+            logger.info("Posting comments to Discord text channel...")
+            await self.discord_bot.post_comments(comments)
+            logger.info("Comments posted to Discord")
 
     async def run(self) -> None:
         """アプリケーションのメインループ"""
@@ -186,13 +224,28 @@ class CommentGeneratorApp:
                 await asyncio.sleep(self.config.audio.interval)
 
                 # 音声処理とコメント生成（全ユーザー）
-                await self.process_audio_and_generate_comments()
+                try:
+                    await self.process_audio_and_generate_comments()
+                except Exception as e:
+                    logger.error(f"Error during audio processing: {e}", exc_info=True)
 
         except KeyboardInterrupt:
             logger.info("Shutting down...")
+        except asyncio.CancelledError:
+            logger.info("Task cancelled, shutting down...")
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}", exc_info=True)
         finally:
             if self.discord_bot:
-                await self.discord_bot.close()
+                try:
+                    await self.discord_bot.close()
+                except Exception as e:
+                    logger.error(f"Error during Discord bot shutdown: {e}")
+
+            # エグゼキューターをシャットダウン
+            logger.info("Shutting down thread pool executor...")
+            self.executor.shutdown(wait=True)
+
             logger.info("Application stopped")
 
 

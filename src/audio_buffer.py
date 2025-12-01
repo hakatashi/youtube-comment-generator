@@ -1,6 +1,7 @@
 """音声バッファ管理モジュール"""
 
 import io
+import threading
 import time
 import wave
 from collections import deque
@@ -26,6 +27,9 @@ class UserAudioBuffer:
         # 音声データバッファ（タイムスタンプ付き）: (timestamp, sample)
         self.buffer: Deque[Tuple[float, int]] = deque()
 
+        # スレッドセーフ用のロック
+        self._lock = threading.Lock()
+
     def add_audio(self, audio_data: bytes) -> None:
         """
         音声データをバッファに追加
@@ -44,14 +48,16 @@ class UserAudioBuffer:
             # ステレオデータを2チャンネルに分割してモノラルに変換
             audio_array = audio_array.reshape(-1, 2).mean(axis=1).astype(np.int16)
 
-        # バッファに追加（タイムスタンプ付き）
-        for sample in audio_array:
-            self.buffer.append((current_time, sample))
+        # ロックを取得してバッファに追加
+        with self._lock:
+            # バッファに追加（タイムスタンプ付き）
+            for sample in audio_array:
+                self.buffer.append((current_time, sample))
 
-        # buffer_duration秒より古いデータを削除
-        cutoff_time = current_time - self.buffer_duration
-        while self.buffer and self.buffer[0][0] < cutoff_time:
-            self.buffer.popleft()
+            # buffer_duration秒より古いデータを削除
+            cutoff_time = current_time - self.buffer_duration
+            while self.buffer and self.buffer[0][0] < cutoff_time:
+                self.buffer.popleft()
 
     def get_audio(self, duration: Optional[int] = None) -> np.ndarray:
         """
@@ -64,24 +70,25 @@ class UserAudioBuffer:
         Returns:
             音声データ（numpy配列）
         """
-        if not self.buffer:
-            return np.array([], dtype=np.int16)
+        with self._lock:
+            if not self.buffer:
+                return np.array([], dtype=np.int16)
 
-        if duration is None:
-            # 全データを返す（サンプル値のみ）
-            return np.array([sample for _, sample in self.buffer], dtype=np.int16)
+            if duration is None:
+                # 全データを返す（サンプル値のみ）
+                return np.array([sample for _, sample in self.buffer], dtype=np.int16)
 
-        # 現在時刻から指定時間前までのデータを取得
-        current_time = time.time()
-        cutoff_time = current_time - duration
+            # 現在時刻から指定時間前までのデータを取得
+            current_time = time.time()
+            cutoff_time = current_time - duration
 
-        # cutoff_time以降のデータのみを取得
-        filtered_data = [sample for timestamp, sample in self.buffer if timestamp >= cutoff_time]
+            # cutoff_time以降のデータのみを取得
+            filtered_data = [sample for timestamp, sample in self.buffer if timestamp >= cutoff_time]
 
-        if not filtered_data:
-            return np.array([], dtype=np.int16)
+            if not filtered_data:
+                return np.array([], dtype=np.int16)
 
-        return np.array(filtered_data, dtype=np.int16)
+            return np.array(filtered_data, dtype=np.int16)
 
     def get_wav_bytes(self, duration: Optional[int] = None) -> bytes:
         """
@@ -107,11 +114,13 @@ class UserAudioBuffer:
 
     def clear(self) -> None:
         """バッファをクリア"""
-        self.buffer.clear()
+        with self._lock:
+            self.buffer.clear()
 
     def get_duration(self) -> float:
         """現在バッファに保存されている音声の長さ（秒）を取得"""
-        return len(self.buffer) / self.sample_rate
+        with self._lock:
+            return len(self.buffer) / self.sample_rate
 
     def is_ready(self, required_duration: int = 60) -> bool:
         """
@@ -123,15 +132,16 @@ class UserAudioBuffer:
         Returns:
             指定時間以内にデータがある場合True
         """
-        if not self.buffer:
-            return False
+        with self._lock:
+            if not self.buffer:
+                return False
 
-        # 現在時刻から指定時間前までにデータがあるかチェック
-        current_time = time.time()
-        cutoff_time = current_time - required_duration
+            # 現在時刻から指定時間前までにデータがあるかチェック
+            current_time = time.time()
+            cutoff_time = current_time - required_duration
 
-        # cutoff_time以降のデータが存在するかチェック
-        return any(timestamp >= cutoff_time for timestamp, _ in self.buffer)
+            # cutoff_time以降のデータが存在するかチェック
+            return any(timestamp >= cutoff_time for timestamp, _ in self.buffer)
 
 
 class AudioBuffer:
@@ -150,6 +160,9 @@ class AudioBuffer:
 
         # ユーザーID -> UserAudioBuffer のマップ
         self.user_buffers: Dict[int, UserAudioBuffer] = {}
+
+        # ユーザーID -> ユーザー名 のマップ
+        self.user_names: Dict[int, str] = {}
 
     def add_audio(self, user_id: int, audio_data: bytes) -> None:
         """
@@ -259,3 +272,25 @@ class AudioBuffer:
             self.user_buffers.clear()
         elif user_id in self.user_buffers:
             self.user_buffers[user_id].clear()
+
+    def set_user_name(self, user_id: int, user_name: str) -> None:
+        """
+        ユーザー名を設定
+
+        Args:
+            user_id: ユーザーID
+            user_name: ユーザー名
+        """
+        self.user_names[user_id] = user_name
+
+    def get_user_name(self, user_id: int) -> str:
+        """
+        ユーザー名を取得
+
+        Args:
+            user_id: ユーザーID
+
+        Returns:
+            ユーザー名（未登録の場合は "Unknown"）
+        """
+        return self.user_names.get(user_id, "Unknown")
