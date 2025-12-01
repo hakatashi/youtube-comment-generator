@@ -12,6 +12,11 @@ from llama_cpp import Llama
 
 logger = logging.getLogger(__name__)
 
+# TYPE_CHECKING用のインポート
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .firestore_client import FirestoreClient
+
 
 class CommentGenerator:
     """Qwen2.5-32B を使用したコメント生成クラス"""
@@ -23,6 +28,7 @@ class CommentGenerator:
         n_ctx: int = 4096,
         verbose: bool = False,
         comments_file: str = "comments.txt",
+        firestore_client: "FirestoreClient" = None,
     ):
         """
         Args:
@@ -31,12 +37,14 @@ class CommentGenerator:
             n_ctx: コンテキスト長
             verbose: 詳細ログを出力するか
             comments_file: コメント出力ファイルのパス
+            firestore_client: Firestoreクライアント（Noneの場合はファイルに保存）
         """
         self.model_path = model_path
         self.n_gpu_layers = n_gpu_layers
         self.n_ctx = n_ctx
         self.llm = None
         self.comments_file = Path(comments_file)
+        self.firestore_client = firestore_client
 
         # 直近30件のコメント履歴を保持
         self.comment_history: Deque[str] = deque(maxlen=30)
@@ -59,13 +67,19 @@ class CommentGenerator:
             logger.error(f"Failed to load LLM: {e}")
             raise
 
-    def generate_comments(self, transcription: str, num_comments: int = 10) -> List[str]:
+    def generate_comments(
+        self,
+        transcription: str,
+        num_comments: int = 10,
+        user_transcriptions: list[str] = None,
+    ) -> List[str]:
         """
         文字起こしテキストからYouTube風コメントを生成
 
         Args:
             transcription: 文字起こしテキスト
             num_comments: 生成するコメント数
+            user_transcriptions: ユーザーごとの文字起こしリスト（Firestore保存用）
 
         Returns:
             生成されたコメントのリスト
@@ -102,8 +116,16 @@ class CommentGenerator:
             for comment in comments[:num_comments]:
                 self.comment_history.append(comment)
 
-            # ファイルに保存
-            self._save_comments_to_file(comments[:num_comments])
+            # Firestoreまたはファイルに保存
+            if self.firestore_client:
+                self._save_comments_to_firestore(
+                    comments[:num_comments],
+                    prompt,
+                    transcription,
+                    user_transcriptions or [],
+                )
+            else:
+                self._save_comments_to_file(comments[:num_comments])
 
             return comments[:num_comments]
 
@@ -270,6 +292,37 @@ class CommentGenerator:
 
         except Exception as e:
             logger.error(f"Failed to save comments to file: {e}")
+
+    def _save_comments_to_firestore(
+        self,
+        comments: List[str],
+        prompt: str,
+        transcription: str,
+        user_transcriptions: list[str],
+    ) -> None:
+        """
+        生成されたコメントをFirestoreに保存
+
+        Args:
+            comments: 保存するコメントのリスト
+            prompt: 使用したプロンプト
+            transcription: 結合された文字起こしテキスト
+            user_transcriptions: ユーザーごとの文字起こしリスト
+        """
+        if not comments:
+            return
+
+        try:
+            self.firestore_client.save_comments_batch(
+                comments=comments,
+                prompt=prompt,
+                transcription=transcription,
+                user_transcriptions=user_transcriptions,
+            )
+            logger.info(f"Saved {len(comments)} comments to Firestore")
+
+        except Exception as e:
+            logger.error(f"Failed to save comments to Firestore: {e}")
 
 if __name__ == "__main__":
     # テストコード
