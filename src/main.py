@@ -12,6 +12,7 @@ from .audio_buffer import AudioBuffer
 from .comment_generator import CommentGenerator
 from .config import AppConfig
 from .discord_client import start_discord_client
+from .firestore_client import FirestoreClient
 from .model_downloader import ModelDownloader
 from .speech_to_text_faster import SpeechToTextFaster
 
@@ -47,6 +48,7 @@ class CommentGeneratorApp:
         self.stt: SpeechToTextFaster
         self.comment_gen: CommentGenerator
         self.discord_bot = None
+        self.firestore_client: FirestoreClient = None
         # CPU/GPU集約的な処理用のスレッドプール
         self.executor = ThreadPoolExecutor(max_workers=2)
 
@@ -62,6 +64,15 @@ class CommentGeneratorApp:
         )
         logger.info("Audio buffer initialized")
 
+        # Firestoreクライアントの初期化
+        try:
+            logger.info("Initializing Firestore client...")
+            self.firestore_client = FirestoreClient()
+            logger.info("Firestore client initialized")
+        except Exception as e:
+            logger.warning(f"Failed to initialize Firestore client: {e}")
+            logger.warning("Comments will be saved to file instead")
+
         # LLMの初期化
         logger.info("Loading LLM for comment generation...")
 
@@ -72,7 +83,10 @@ class CommentGeneratorApp:
             models_dir=self.config.model.models_dir,
         )
 
-        self.comment_gen = CommentGenerator(model_path=model_path)
+        self.comment_gen = CommentGenerator(
+            model_path=model_path,
+            firestore_client=self.firestore_client,
+        )
         logger.info("LLM loaded")
 
         # Speech-to-Text モデルの初期化 (faster-whisper: 5.6倍高速)
@@ -124,7 +138,12 @@ class CommentGeneratorApp:
 
         # デバッグ用にWAVファイルを保存
         from datetime import datetime
-        debug_wav_path = f"debug_audio_user{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
+        from pathlib import Path
+
+        debug_dir = Path("debug")
+        debug_dir.mkdir(exist_ok=True)
+
+        debug_wav_path = debug_dir / f"debug_audio_user{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
         wav_bytes = self.audio_buffer.get_wav_bytes(user_id, duration=60)
         with open(debug_wav_path, 'wb') as f:
             f.write(wav_bytes)
@@ -195,7 +214,8 @@ class CommentGeneratorApp:
             self.executor,
             self.comment_gen.generate_comments,
             combined_transcript,
-            10  # num_comments
+            10,  # num_comments
+            user_transcriptions  # user_transcriptions for Firestore
         )
 
         # コメントを出力
