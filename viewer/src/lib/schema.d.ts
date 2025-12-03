@@ -12,9 +12,15 @@ export interface Batch extends DocumentData {
 	prompt: string;
 	transcription: string;
 	user_transcriptions: string[];
+	audio_duration?: number;
+	stt_duration?: number;
+	comment_gen_duration?: number;
+	total_duration?: number;
+	user_ids?: number[];
 }
 
 export interface Comment extends DocumentData {
 	comment: string;
 	created_at: Timestamp;
+	index: number;
 }

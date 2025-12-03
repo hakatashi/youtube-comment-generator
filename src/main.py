@@ -117,6 +117,9 @@ class CommentGeneratorApp:
 
     async def process_audio_and_generate_comments(self) -> None:
         """全ユーザーの音声処理とコメント生成を実行（最適化版: 単一STT呼び出し）"""
+        import time
+
+        start_time = time.time()
         logger.info("Processing audio and generating comments...")
 
         # バッファに音声が保存されているすべてのユーザーを取得
@@ -199,6 +202,9 @@ class CommentGeneratorApp:
         sf.write(debug_wav_path, audio_processed, audio_sample_rate)
         logger.info(f"Saved merged debug audio (after silence removal) to {debug_wav_path}")
 
+        # 音声の長さを計算（秒）
+        audio_duration = len(audio_processed) / audio_sample_rate
+
         # Speech-to-Text で文字起こし（無音除去は既に適用済みなので無効化）
         logger.info("Transcribing merged audio...")
 
@@ -206,6 +212,7 @@ class CommentGeneratorApp:
         audio_int16 = (audio_processed * 32768.0).astype(np.int16)
 
         loop = asyncio.get_event_loop()
+        stt_start_time = time.time()
         transcription = await loop.run_in_executor(
             self.executor,
             self.stt.transcribe_from_array,
@@ -213,6 +220,7 @@ class CommentGeneratorApp:
             audio_sample_rate,
             False  # remove_silence_enabled=False（既に除去済み）
         )
+        stt_duration = time.time() - stt_start_time
 
         # 文字起こし結果のチェック
         if not transcription or not transcription.strip():
@@ -220,16 +228,31 @@ class CommentGeneratorApp:
             return
 
         logger.info(f"Transcription: {transcription}")
+        logger.info(f"STT processing time: {stt_duration:.2f}s")
 
         # コメント生成（別スレッドで実行）
         logger.info("Generating comments from transcription...")
+        comment_gen_start_time = time.time()
         comments = await loop.run_in_executor(
             self.executor,
             self.comment_gen.generate_comments,
             transcription,
             100,  # num_comments
-            None  # user_transcriptions は不要
+            None,  # user_transcriptions は不要
+            # 追加メタデータ
+            audio_duration,
+            stt_duration,
+            ready_user_ids,
         )
+        comment_gen_duration = time.time() - comment_gen_start_time
+
+        # 合計時間
+        total_duration = time.time() - start_time
+
+        logger.info(f"Comment generation time: {comment_gen_duration:.2f}s")
+        logger.info(f"Total processing time: {total_duration:.2f}s")
+        logger.info(f"Audio duration: {audio_duration:.2f}s")
+        logger.info(f"Processed {len(ready_user_ids)} user(s): {ready_user_ids}")
 
         # コメントを出力
         print("\n" + "=" * 60)

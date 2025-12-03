@@ -1,7 +1,7 @@
 """Firestore クライアントモジュール"""
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -55,6 +55,10 @@ class FirestoreClient:
         transcription: str,
         user_transcriptions: list[str],
         timestamp: Optional[datetime] = None,
+        audio_duration: Optional[float] = None,
+        stt_duration: Optional[float] = None,
+        comment_gen_duration: Optional[float] = None,
+        user_ids: Optional[list[int]] = None,
     ) -> str:
         """
         複数のコメントを一括でFirestoreに保存
@@ -67,12 +71,16 @@ class FirestoreClient:
             transcription: 結合された文字起こしテキスト
             user_transcriptions: ユーザーごとの文字起こしリスト
             timestamp: タイムスタンプ（Noneの場合は現在時刻）
+            audio_duration: 処理された音声の長さ（秒）
+            stt_duration: 文字起こしにかかった時間（秒）
+            comment_gen_duration: コメント生成にかかった時間（秒）
+            user_ids: 文字起こしに使用したユーザーのID一覧
 
         Returns:
             バッチのドキュメントID
         """
         if timestamp is None:
-            timestamp = datetime.now()
+            timestamp = datetime.now(timezone.utc)
 
         # バッチメタデータを作成
         batch_ref = self.db.collection("batches").document()
@@ -84,16 +92,31 @@ class FirestoreClient:
             "user_transcriptions": user_transcriptions,
         }
 
+        # 追加のメタデータがあれば含める
+        if audio_duration is not None:
+            batch_data["audio_duration"] = audio_duration
+        if stt_duration is not None:
+            batch_data["stt_duration"] = stt_duration
+        if comment_gen_duration is not None:
+            batch_data["comment_gen_duration"] = comment_gen_duration
+        if user_ids is not None:
+            batch_data["user_ids"] = user_ids
+
+        # 合計時間を計算
+        if stt_duration is not None and comment_gen_duration is not None:
+            batch_data["total_duration"] = stt_duration + comment_gen_duration
+
         # バッチ操作を開始
         batch = self.db.batch()
         batch.set(batch_ref, batch_data)
 
-        # 各コメントをサブコレクションに保存
-        for comment in comments:
+        # 各コメントをサブコレクションに保存（生成順序を保持）
+        for index, comment in enumerate(comments):
             comment_ref = batch_ref.collection("comments").document()
             comment_data = {
                 "comment": comment,
                 "created_at": timestamp,
+                "index": index,  # 生成順序を保持
             }
             batch.set(comment_ref, comment_data)
 

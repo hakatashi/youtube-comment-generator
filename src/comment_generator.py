@@ -5,7 +5,7 @@ import logging
 import re
 import unicodedata
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Deque, List
 
@@ -79,6 +79,9 @@ class CommentGenerator:
         transcription: str,
         num_comments: int = 100,
         user_transcriptions: list[str] = None,
+        audio_duration: float = None,
+        stt_duration: float = None,
+        user_ids: list[int] = None,
     ) -> List[str]:
         """
         文字起こしテキストからYouTube風コメントを生成
@@ -87,6 +90,9 @@ class CommentGenerator:
             transcription: 文字起こしテキスト
             num_comments: 生成するコメント数
             user_transcriptions: ユーザーごとの文字起こしリスト（Firestore保存用）
+            audio_duration: 処理された音声の長さ（秒）
+            stt_duration: 文字起こしにかかった時間（秒）
+            user_ids: 文字起こしに使用したユーザーのID一覧
 
         Returns:
             生成されたコメントのリスト
@@ -98,6 +104,9 @@ class CommentGenerator:
         prompt = self._create_prompt(transcription, num_comments)
 
         try:
+            import time
+            comment_gen_start = time.time()
+
             logger.info(f"Generating {num_comments} comments...")
             logger.info(f"Prompt: {prompt}")
 
@@ -126,6 +135,9 @@ class CommentGenerator:
 
             logger.info(f"Generated {len(comments)} comments")
 
+            # コメント生成にかかった時間（LLMのみ）
+            comment_gen_duration = time.time() - comment_gen_start
+
             # コメント履歴に追加
             for comment in comments[:num_comments]:
                 self.comment_history.append(comment)
@@ -137,6 +149,10 @@ class CommentGenerator:
                     prompt,
                     transcription,
                     user_transcriptions or [],
+                    audio_duration,
+                    stt_duration,
+                    comment_gen_duration,
+                    user_ids or [],
                 )
             else:
                 self._save_comments_to_file(comments[:num_comments])
@@ -217,7 +233,7 @@ class CommentGenerator:
             return
 
         try:
-            timestamp = datetime.now().isoformat()
+            timestamp = datetime.now(timezone.utc).isoformat()
 
             # ファイルに追記
             with open(self.comments_file, "a", encoding="utf-8") as f:
@@ -237,6 +253,10 @@ class CommentGenerator:
         prompt: str,
         transcription: str,
         user_transcriptions: list[str],
+        audio_duration: float,
+        stt_duration: float,
+        comment_gen_duration: float,
+        user_ids: list[int],
     ) -> None:
         """
         生成されたコメントをFirestoreに保存
@@ -246,6 +266,10 @@ class CommentGenerator:
             prompt: 使用したプロンプト
             transcription: 結合された文字起こしテキスト
             user_transcriptions: ユーザーごとの文字起こしリスト
+            audio_duration: 処理された音声の長さ（秒）
+            stt_duration: 文字起こしにかかった時間（秒）
+            comment_gen_duration: コメント生成にかかった時間（秒）
+            user_ids: 文字起こしに使用したユーザーのID一覧
         """
         if not comments:
             return
@@ -256,6 +280,10 @@ class CommentGenerator:
                 prompt=prompt,
                 transcription=transcription,
                 user_transcriptions=user_transcriptions,
+                audio_duration=audio_duration,
+                stt_duration=stt_duration,
+                comment_gen_duration=comment_gen_duration,
+                user_ids=user_ids,
             )
             logger.info(f"Saved {len(comments)} comments to Firestore")
 

@@ -2,7 +2,7 @@
 """Firestoreのbatchesコレクションにデバッグ用データを追加するスクリプト"""
 
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.firestore_client import FirestoreClient
 
@@ -35,7 +35,13 @@ def main():
         "今日もよろしくお願いします。",
     ]
 
-    timestamp = datetime.now()
+    timestamp = datetime.now(timezone.utc)
+
+    # デバッグ用のメタデータ
+    audio_duration = 15.5  # 15.5秒の音声
+    stt_duration = 1.8  # STTに1.8秒
+    comment_gen_duration = 3.2  # コメント生成に3.2秒
+    user_ids = [123456789, 987654321]  # 2人のユーザー
 
     print(f"\nAdding batch with {len(debug_comments)} debug comments to Firestore...")
     batch_id = client.save_comments_batch(
@@ -44,6 +50,10 @@ def main():
         transcription=transcription,
         user_transcriptions=user_transcriptions,
         timestamp=timestamp,
+        audio_duration=audio_duration,
+        stt_duration=stt_duration,
+        comment_gen_duration=comment_gen_duration,
+        user_ids=user_ids,
     )
 
     print(f"\n✓ Successfully added batch with {len(debug_comments)} comments!")

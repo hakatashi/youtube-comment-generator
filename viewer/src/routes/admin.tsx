@@ -22,7 +22,7 @@ const Admin: Component = () => {
 			const batchData = await Promise.all(
 				batchesQuery.data.map(async (batch) => {
 					const commentsRef = collection(db, 'batches', batch.id, 'comments') as CollectionReference<Comment>;
-					const commentsSnapshot = await getDocs(query(commentsRef, orderBy('created_at', 'desc')));
+					const commentsSnapshot = await getDocs(query(commentsRef, orderBy('index', 'asc')));
 					const comments = commentsSnapshot.docs.map((doc) => ({
 						id: doc.id,
 						...doc.data(),
@@ -50,6 +50,11 @@ const Admin: Component = () => {
 			minute: '2-digit',
 			second: '2-digit',
 		});
+	};
+
+	const formatDuration = (seconds?: number) => {
+		if (seconds === undefined || seconds === null) return 'N/A';
+		return `${seconds.toFixed(2)}秒`;
 	};
 
 	const togglePrompt = (batchId: string) => {
@@ -96,6 +101,21 @@ const Admin: Component = () => {
 								</span>
 								<span class={styles.metaItem}>
 									<strong>コメント数:</strong> {item.batch.count}
+								</span>
+								<span class={styles.metaItem}>
+									<strong>ユーザー数:</strong> {item.batch.user_ids?.length ?? 'N/A'}
+								</span>
+								<span class={styles.metaItem}>
+									<strong>音声:</strong> {formatDuration(item.batch.audio_duration)}
+								</span>
+								<span class={styles.metaItem}>
+									<strong>STT:</strong> {formatDuration(item.batch.stt_duration)}
+								</span>
+								<span class={styles.metaItem}>
+									<strong>コメント生成:</strong> {formatDuration(item.batch.comment_gen_duration)}
+								</span>
+								<span class={styles.metaItem}>
+									<strong>合計:</strong> {formatDuration(item.batch.total_duration)}
 								</span>
 								<button
 									class={styles.promptToggle}
