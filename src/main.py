@@ -157,27 +157,61 @@ class CommentGeneratorApp:
 
         logger.info(f"Merged audio: {len(merged_audio)} samples")
 
-        # デバッグ用にWAVファイルを保存
+        # 無音除去を適用（デバッグ出力とSTT処理で共用）
+        from .speech_to_text_faster import remove_silence
+        import numpy as np
+        from scipy import signal
+
+        # int16 -> float32に変換して正規化
+        audio_float = merged_audio.astype(np.float32) / 32768.0
+
+        # リサンプリング（16kHz）
+        target_sample_rate = 16000
+        if self.config.audio.sample_rate != target_sample_rate:
+            logger.info(f"Resampling audio from {self.config.audio.sample_rate} Hz to {target_sample_rate} Hz")
+            num_samples = int(len(audio_float) * target_sample_rate / self.config.audio.sample_rate)
+            audio_float = signal.resample(audio_float, num_samples)
+            audio_sample_rate = target_sample_rate
+        else:
+            audio_sample_rate = self.config.audio.sample_rate
+
+        # 無音除去
+        audio_processed = remove_silence(
+            audio_float,
+            audio_sample_rate,
+            silence_threshold_db=-45.0,
+            min_silence_duration=0.5,
+        )
+
+        if len(audio_processed) == 0:
+            logger.warning("No audio data after silence removal")
+            return
+
+        # デバッグ用にWAVファイルを保存（無音除去後）
         from datetime import datetime
         from pathlib import Path
+        import soundfile as sf
 
         debug_dir = Path("debug")
         debug_dir.mkdir(exist_ok=True)
 
         debug_wav_path = debug_dir / f"debug_audio_merged_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
-        wav_bytes = self.audio_buffer.get_merged_wav_bytes(user_ids=ready_user_ids, duration=60)
-        with open(debug_wav_path, 'wb') as f:
-            f.write(wav_bytes)
-        logger.info(f"Saved merged debug audio to {debug_wav_path}")
+        sf.write(debug_wav_path, audio_processed, audio_sample_rate)
+        logger.info(f"Saved merged debug audio (after silence removal) to {debug_wav_path}")
 
-        # Speech-to-Text で文字起こし（単一呼び出し、話者分離なし）
+        # Speech-to-Text で文字起こし（無音除去は既に適用済みなので無効化）
         logger.info("Transcribing merged audio...")
+
+        # 処理済み音声をint16に戻す
+        audio_int16 = (audio_processed * 32768.0).astype(np.int16)
+
         loop = asyncio.get_event_loop()
         transcription = await loop.run_in_executor(
             self.executor,
             self.stt.transcribe_from_array,
-            merged_audio,
-            self.config.audio.sample_rate
+            audio_int16,
+            audio_sample_rate,
+            False  # remove_silence_enabled=False（既に除去済み）
         )
 
         # 文字起こし結果のチェック

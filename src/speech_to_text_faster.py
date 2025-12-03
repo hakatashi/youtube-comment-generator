@@ -12,6 +12,119 @@ from scipy import signal
 logger = logging.getLogger(__name__)
 
 
+def remove_silence(
+    audio_data: np.ndarray,
+    sample_rate: int,
+    silence_threshold_db: float = -40.0,
+    min_silence_duration: float = 0.3,
+) -> np.ndarray:
+    """
+    音声データから無音部分を除去
+
+    Args:
+        audio_data: 音声データ（float32, 正規化済み）
+        sample_rate: サンプリングレート
+        silence_threshold_db: 無音とみなす音量閾値（dB）
+        min_silence_duration: カットする最小無音時間（秒）
+
+    Returns:
+        無音部分を除去した音声データ
+    """
+    if len(audio_data) == 0:
+        return audio_data
+
+    # RMS（二乗平均平方根）で音量を計算
+    # ウィンドウサイズは10ms程度
+    window_size = int(sample_rate * 0.01)  # 10ms
+    hop_size = window_size // 2
+
+    # RMSを計算
+    rms = []
+    for i in range(0, len(audio_data) - window_size, hop_size):
+        window = audio_data[i:i + window_size]
+        rms_value = np.sqrt(np.mean(window ** 2))
+        rms.append(rms_value)
+
+    rms = np.array(rms)
+
+    # dBに変換（0除算を避けるため、最小値を設定）
+    rms_db = 20 * np.log10(rms + 1e-10)
+
+    # 閾値以下を無音とみなす
+    is_silent = rms_db < silence_threshold_db
+
+    # 無音区間を検出
+    min_silence_samples = int(min_silence_duration * sample_rate / hop_size)
+
+    # 連続する無音区間を検出
+    silent_regions = []
+    in_silence = False
+    silence_start = 0
+
+    for i, silent in enumerate(is_silent):
+        if silent and not in_silence:
+            # 無音開始
+            in_silence = True
+            silence_start = i
+        elif not silent and in_silence:
+            # 無音終了
+            silence_length = i - silence_start
+            if silence_length >= min_silence_samples:
+                # 十分長い無音なので記録
+                start_sample = silence_start * hop_size
+                end_sample = i * hop_size
+                silent_regions.append((start_sample, end_sample))
+            in_silence = False
+
+    # 最後まで無音の場合
+    if in_silence:
+        silence_length = len(is_silent) - silence_start
+        if silence_length >= min_silence_samples:
+            start_sample = silence_start * hop_size
+            end_sample = len(audio_data)
+            silent_regions.append((start_sample, end_sample))
+
+    # 無音部分を除去して、音声部分のみを結合
+    if not silent_regions:
+        # 無音がない場合はそのまま返す
+        return audio_data
+
+    logger.info(f"Detected {len(silent_regions)} silent regions to remove")
+
+    # 音声部分を抽出
+    audio_parts = []
+    last_end = 0
+
+    for start, end in silent_regions:
+        # 無音の前の音声部分を追加
+        if start > last_end:
+            audio_parts.append(audio_data[last_end:start])
+        last_end = end
+
+    # 最後の音声部分を追加
+    if last_end < len(audio_data):
+        audio_parts.append(audio_data[last_end:])
+
+    if not audio_parts:
+        # すべて無音だった場合
+        logger.warning("All audio data was detected as silence")
+        return np.array([], dtype=audio_data.dtype)
+
+    # 結合
+    result = np.concatenate(audio_parts)
+
+    original_duration = len(audio_data) / sample_rate
+    new_duration = len(result) / sample_rate
+    removed_duration = original_duration - new_duration
+
+    logger.info(
+        f"Silence removal: {original_duration:.2f}s → {new_duration:.2f}s "
+        f"(removed {removed_duration:.2f}s, {removed_duration / original_duration * 100:.1f}%)"
+    )
+
+    return result
+
+
 class SpeechToTextFaster:
     """faster-whisper を使用した高速音声認識クラス"""
 
@@ -112,7 +225,7 @@ class SpeechToTextFaster:
             return ""
 
     def transcribe_from_array(
-        self, audio_array: np.ndarray, sample_rate: int = 48000
+        self, audio_array: np.ndarray, sample_rate: int = 48000, remove_silence_enabled: bool = True
     ) -> str:
         """
         numpy配列から文字起こし
@@ -120,6 +233,7 @@ class SpeechToTextFaster:
         Args:
             audio_array: 音声データ（numpy配列）
             sample_rate: サンプリングレート
+            remove_silence_enabled: 無音除去を有効にするか（デフォルト: True）
 
         Returns:
             文字起こしテキスト
@@ -137,6 +251,19 @@ class SpeechToTextFaster:
                 num_samples = int(len(audio_data) * 16000 / sample_rate)
                 audio_data = signal.resample(audio_data, num_samples)
                 sample_rate = 16000
+
+            # 無音除去
+            if remove_silence_enabled:
+                audio_data = remove_silence(
+                    audio_data,
+                    sample_rate,
+                    silence_threshold_db=-40.0,
+                    min_silence_duration=0.3,
+                )
+
+                if len(audio_data) == 0:
+                    logger.warning("No audio data after silence removal")
+                    return ""
 
             # 一時ファイルに保存 (faster-whisperはファイルパスを期待)
             import tempfile
