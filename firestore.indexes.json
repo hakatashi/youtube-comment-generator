@@ -4,10 +4,15 @@
     {
       "collectionGroup": "comments",
       "fieldPath": "created_at",
+      "ttl": false,
       "indexes": [
         {
-          "queryScope": "COLLECTION_GROUP",
-          "order": "DESCENDING"
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION_GROUP"
         }
       ]
     }
