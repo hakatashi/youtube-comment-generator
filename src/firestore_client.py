@@ -48,43 +48,6 @@ class FirestoreClient:
             return str(path)
         return None
 
-    def save_comment(
-        self,
-        comment: str,
-        prompt: str,
-        transcription: str,
-        user_transcriptions: list[str],
-        timestamp: Optional[datetime] = None,
-    ) -> str:
-        """
-        コメントをFirestoreに保存
-
-        Args:
-            comment: 生成されたコメント
-            prompt: 使用したプロンプト
-            transcription: 結合された文字起こしテキスト
-            user_transcriptions: ユーザーごとの文字起こしリスト
-            timestamp: タイムスタンプ（Noneの場合は現在時刻）
-
-        Returns:
-            保存されたドキュメントのID
-        """
-        if timestamp is None:
-            timestamp = datetime.now()
-
-        doc_data = {
-            "comment": comment,
-            "prompt": prompt,
-            "transcription": transcription,
-            "user_transcriptions": user_transcriptions,
-            "created_at": timestamp,
-        }
-
-        doc_ref = self.db.collection("comments").add(doc_data)
-        doc_id = doc_ref[1].id
-        logger.info(f"Saved comment to Firestore: {doc_id}")
-        return doc_id
-
     def save_comments_batch(
         self,
         comments: list[str],
@@ -92,9 +55,11 @@ class FirestoreClient:
         transcription: str,
         user_transcriptions: list[str],
         timestamp: Optional[datetime] = None,
-    ) -> list[str]:
+    ) -> str:
         """
         複数のコメントを一括でFirestoreに保存
+        バッチメタデータを /batches/{batchId} に保存し、
+        各コメントをサブコレクション /batches/{batchId}/comments/{commentId} に保存
 
         Args:
             comments: 生成されたコメントのリスト
@@ -104,51 +69,59 @@ class FirestoreClient:
             timestamp: タイムスタンプ（Noneの場合は現在時刻）
 
         Returns:
-            保存されたドキュメントのIDリスト
+            バッチのドキュメントID
         """
         if timestamp is None:
             timestamp = datetime.now()
 
-        doc_ids = []
-        batch = self.db.batch()
+        # バッチメタデータを作成
+        batch_ref = self.db.collection("batches").document()
+        batch_data = {
+            "created_at": timestamp,
+            "count": len(comments),
+            "prompt": prompt,
+            "transcription": transcription,
+            "user_transcriptions": user_transcriptions,
+        }
 
+        # バッチ操作を開始
+        batch = self.db.batch()
+        batch.set(batch_ref, batch_data)
+
+        # 各コメントをサブコレクションに保存
         for comment in comments:
-            doc_ref = self.db.collection("comments").document()
-            doc_data = {
+            comment_ref = batch_ref.collection("comments").document()
+            comment_data = {
                 "comment": comment,
-                "prompt": prompt,
-                "transcription": transcription,
-                "user_transcriptions": user_transcriptions,
                 "created_at": timestamp,
             }
-            batch.set(doc_ref, doc_data)
-            doc_ids.append(doc_ref.id)
+            batch.set(comment_ref, comment_data)
 
         batch.commit()
-        logger.info(f"Saved {len(comments)} comments to Firestore")
-        return doc_ids
+        logger.info(f"Saved batch {batch_ref.id} with {len(comments)} comments to Firestore")
+        return batch_ref.id
 
-    def get_recent_comments(self, limit: int = 50) -> list[dict]:
+    def get_recent_batches(self, limit: int = 10) -> list[dict]:
         """
-        最新のコメントを取得
+        最新のバッチを取得
 
         Args:
-            limit: 取得する件数
+            limit: 取得するバッチ件数
 
         Returns:
-            コメントのリスト
+            バッチのリスト
         """
         docs = (
-            self.db.collection("comments")
+            self.db.collection("batches")
             .order_by("created_at", direction=firestore.Query.DESCENDING)
             .limit(limit)
             .stream()
         )
 
-        comments = []
+        batches = []
         for doc in docs:
             data = doc.to_dict()
             data["id"] = doc.id
-            comments.append(data)
+            batches.append(data)
 
-        return comments
+        return batches

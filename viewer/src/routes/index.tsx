@@ -1,5 +1,5 @@
 import {createEffect, createSignal, For, type Component} from 'solid-js';
-import {Comments} from '~/lib/firebase';
+import {AllComments} from '~/lib/firebase';
 import {useFirestore} from 'solid-firebase';
 import {limit, orderBy, query} from 'firebase/firestore';
 import type {Comment} from '~/lib/schema';
@@ -16,7 +16,7 @@ const randint = (max: number) => {
 
 const Index: Component = () => {
 	const commentSources = useFirestore(query(
-		Comments,
+		AllComments,
 		orderBy('created_at', 'desc'),
 		limit(50),
 	));
@@ -28,21 +28,11 @@ const Index: Component = () => {
 
 	let commentsRef!: HTMLDivElement;
 
-	const formatDate = (timestamp: any) => {
-		if (!timestamp) return '';
-		const date = timestamp.toDate();
-		return new Intl.DateTimeFormat('ja-JP', {
-			year: 'numeric',
-			month: '2-digit',
-			day: '2-digit',
-			hour: '2-digit',
-			minute: '2-digit',
-			second: '2-digit',
-		}).format(date);
-	};
-
 	createEffect(() => {
 		console.log('Comments updated:', commentSources.data);
+		if (commentSources.error) {
+			console.error('Error fetching comments:', commentSources.error);
+		}
 
 		if (commentSources.data) {
 			for (const comment of commentSources.data) {

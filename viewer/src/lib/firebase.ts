@@ -2,9 +2,11 @@ import {initializeApp} from 'firebase/app';
 import {
 	getFirestore,
 	collection,
+	collectionGroup,
 	type CollectionReference,
+	type Query,
 } from 'firebase/firestore';
-import type {Comment} from './schema';
+import type {Batch, Comment} from './schema';
 
 const firebaseConfig = {
 	apiKey: "AIzaSyB9D6HxqiVPmXJqPRmo90_MeLlpzIZ379Y",
@@ -19,6 +21,7 @@ const app = initializeApp(firebaseConfig);
 
 const db = getFirestore(app);
 
-const Comments = collection(db, 'comments') as CollectionReference<Comment>;
+const Batches = collection(db, 'batches') as CollectionReference<Batch>;
+const AllComments = collectionGroup(db, 'comments') as Query<Comment>;
 
-export {app as default, db, Comments};
+export {app as default, db, Batches, AllComments};
