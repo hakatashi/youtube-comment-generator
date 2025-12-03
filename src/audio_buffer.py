@@ -22,7 +22,7 @@ class UserAudioBuffer:
     """ユーザーごとの音声データをバッファリングするクラス"""
 
     # チャンク結合の閾値（秒）: この時間以内の隙間は同一チャンクとみなす
-    CHUNK_MERGE_EPSILON = 0.1
+    CHUNK_MERGE_EPSILON = 0.5
 
     def __init__(self, sample_rate: int = 48000, channels: int = 2, buffer_duration: int = 60):
         """

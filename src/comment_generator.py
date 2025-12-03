@@ -194,8 +194,11 @@ class CommentGenerator:
                 continue
 
             # 番号付きリスト（1. や - など）を削除
-            line = re.sub(r"^[\d\-\*\+]+[\.\)]?\s*", "", line)
+            line = re.sub(r"^[\-\*\+]+\s*", "", line)
+            line = re.sub(r"^\d+\.\s*", "", line)
             line = re.sub(r"^[・•]\s*", "", line)
+            if re.match(r'^[「『].*[」』]$', line):
+                line = line[1:-1].strip()
 
             # コメントとして有効な文字列のみ追加
             if line and len(line) > 0 and len(line) <= 30 and self._has_at_least_one_letter(line):
