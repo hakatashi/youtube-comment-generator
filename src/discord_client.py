@@ -167,58 +167,6 @@ class CommentBot(commands.Bot):
         """
         logger.info("Recording finished")
 
-    async def post_comments(self, comments: list[str]) -> None:
-        """
-        テキストチャンネルにコメントを投稿
-
-        Args:
-            comments: 投稿するコメントのリスト
-        """
-        if not comments:
-            logger.warning("No comments to post")
-            return
-
-        try:
-            # ギルドとテキストチャンネルを取得
-            guild = self.get_guild(self.guild_id)
-            if guild is None:
-                logger.error(f"Guild {self.guild_id} not found")
-                return
-
-            text_channel = guild.get_channel(self.text_channel_id)
-            if text_channel is None:
-                logger.error(f"Text channel {self.text_channel_id} not found")
-                return
-
-            if not isinstance(text_channel, discord.TextChannel):
-                logger.error(f"Channel {self.text_channel_id} is not a text channel")
-                return
-
-            # コメントを1つのメッセージとして投稿
-            message_content = "\n".join(f"{i}. {comment}" for i, comment in enumerate(comments, 1))
-
-            # Discordの文字数制限（2000文字）を考慮
-            if len(message_content) > 2000:
-                # 長すぎる場合は分割して送信
-                current_message = ""
-                for i, comment in enumerate(comments, 1):
-                    line = f"{i}. {comment}\n"
-                    if len(current_message) + len(line) > 2000:
-                        await text_channel.send(current_message)
-                        current_message = line
-                    else:
-                        current_message += line
-
-                if current_message:
-                    await text_channel.send(current_message)
-            else:
-                await text_channel.send(message_content)
-
-            logger.info(f"Posted {len(comments)} comments to text channel")
-
-        except Exception as e:
-            logger.error(f"Failed to post comments to text channel: {e}")
-
     async def disconnect_voice(self) -> None:
         """ボイスチャンネルから切断"""
         if self.voice_client and self.voice_client.is_connected():

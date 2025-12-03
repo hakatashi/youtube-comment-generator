@@ -214,7 +214,7 @@ class CommentGeneratorApp:
             self.executor,
             self.comment_gen.generate_comments,
             combined_transcript,
-            10,  # num_comments
+            100,  # num_comments
             user_transcriptions  # user_transcriptions for Firestore
         )
 
@@ -225,12 +225,6 @@ class CommentGeneratorApp:
         for i, comment in enumerate(comments, 1):
             print(f"{i:2d}. {comment}")
         print("=" * 60 + "\n")
-
-        # Discordのテキストチャンネルにコメントを投稿
-        if self.discord_bot and comments:
-            logger.info("Posting comments to Discord text channel...")
-            await self.discord_bot.post_comments(comments)
-            logger.info("Comments posted to Discord")
 
     async def run(self) -> None:
         """アプリケーションのメインループ"""

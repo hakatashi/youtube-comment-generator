@@ -1,13 +1,15 @@
-"""コメント生成モジュール - Qwen2.5-32B を使用"""
+"""コメント生成モジュール - Qwen3-32B を使用"""
 
 import json
 import logging
 import re
+import unicodedata
 from collections import deque
 from datetime import datetime
 from pathlib import Path
 from typing import Deque, List
 
+from jinja2 import Environment, FileSystemLoader
 from llama_cpp import Llama
 
 logger = logging.getLogger(__name__)
@@ -19,7 +21,7 @@ if TYPE_CHECKING:
 
 
 class CommentGenerator:
-    """Qwen2.5-32B を使用したコメント生成クラス"""
+    """Qwen3-32B を使用したコメント生成クラス"""
 
     def __init__(
         self,
@@ -49,6 +51,11 @@ class CommentGenerator:
         # 直近30件のコメント履歴を保持
         self.comment_history: Deque[str] = deque(maxlen=30)
 
+        # Jinja2環境のセットアップ
+        template_dir = Path(__file__).parent / "templates"
+        self.jinja_env = Environment(loader=FileSystemLoader(str(template_dir)))
+        self.prompt_template = self.jinja_env.get_template("comment_prompt.jinja")
+
         logger.info(f"Initializing LLM: {model_path}")
         self._load_model()
 
@@ -70,7 +77,7 @@ class CommentGenerator:
     def generate_comments(
         self,
         transcription: str,
-        num_comments: int = 10,
+        num_comments: int = 100,
         user_transcriptions: list[str] = None,
     ) -> List[str]:
         """
@@ -92,22 +99,29 @@ class CommentGenerator:
 
         try:
             logger.info(f"Generating {num_comments} comments...")
+            logger.info(f"Prompt: {prompt}")
 
             response = self.llm.create_chat_completion(
                 messages=[
                     {
                         "role": "system",
-                        "content": "あなたは日本のVTuber配信のコメント欄で視聴者がよく書き込むようなコメントを生成するアシスタントです。",
+                        "content": "あなたは日本のVTuber配信のコメント欄で視聴者がよく書き込むようなコメントを生成するアシスタントです。 /no_think",
                     },
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=2048,
-                temperature=0.9,
+                max_tokens=128,
+                temperature=1.1,
                 top_p=0.95,
+                top_k=100,
+                repeat_penalty=1.1,
             )
 
             # レスポンスからコメントを抽出
             generated_text = response["choices"][0]["message"]["content"]
+            output_tokens = response["usage"]["completion_tokens"]
+            logger.info(f"LLM generated text: {generated_text}")
+            logger.info(f"Output Tokens: {output_tokens}")
+
             comments = self._extract_comments(generated_text)
 
             logger.info(f"Generated {len(comments)} comments")
@@ -144,91 +158,15 @@ class CommentGenerator:
         Returns:
             プロンプト文字列
         """
-        prompt = f"""以下のテキストは、とあるVTuberのライブ配信の直近60秒の配信内容の文字起こしです。
+        return self.prompt_template.render(
+            transcription=transcription,
+            num_comments=num_comments,
+            comment_history=list(self.comment_history)[-10:] if self.comment_history else None,
+        )
 
-この文字起こしと、後に挙げる「実際のVTuberのYouTubeコメント例」を参考にして、この場面で投稿されていそうなYouTubeのコメントを{num_comments}件考えてください。
-
-コメントの内容は以下のようなバリエーションを含めてください：
-- 配信内容に直接関連するコメント（「草」「すごい」「かわいい」など）
-- リアクション系（「www」「！？」「えぇ...」など）
-- 応援系（「がんばれ！」「いいぞ！」など）
-- 初見・挨拶系（「初見です」「こんにちは」など）
-- 質問や相槌（「なるほど」「それな」など）
-- 批判的、皮肉的なコメントも適度に含める
-
-コメントは1行ずつ、番号なしで出力してください。各コメントは短く、2～20文字程度の長さで出力してください。"""
-
-        # 直近のコメント履歴がある場合は追加
-        if self.comment_history:
-            history_text = "\n".join(f"- {comment}" for comment in self.comment_history)
-            prompt += f"""
-
-**重要**: 以下は直近で生成されたコメントです。これらと類似した内容や表現を避け、バリエーションに富んだ新しいコメントを生成してください：
-
-{history_text}"""
-
-        prompt += f"""
-
-## 直近60秒の配信内容の文字起こし
-
-{transcription}
-
-## 実際のVTuberのYouTubeコメント例
-以下は実際のVTuber配信のコメント例です。これらを参考にしてコメントを生成してください。
-
-* かわいい
-* 草
-* かわいいw
-* スバルww
-* 草
-* 一般通過アヒル
-* やはりこの台うめえな
-* おわったか
-* おわったー
-* ドドド！
-* あらら
-* こんばんはー
-* きたあああああああああああああ
-* こいこい！
-* きちゃあああああ！
-* 頼むぞー
-* 全員同じ顔してやばい
-* んー。あんまり冒険してもね？
-* くそざこwww
-* そらあず助かる
-* 名前が笑うw
-* 調子w
-* かわいいなw
-* かわいい反応やなwww
-* 草草の草
-* いい悲鳴w
-* くさ
-* そううまくはいかないよな
-* ひどすぎるw
-* 反面教師w
-* どんくさ～～
-* いい顔しとる
-* 威嚇でしょ
-* 顔いかつい
-* あったなあw
-* ﾄﾞﾝﾄﾞﾝ
-* 懐かしいwww
-* うっま
-* 足短くね？
-* 綺麗すぎる
-* あっ
-* 歩き方がいい
-* もうダメだ
-* To be continued
-* 草
-* あー
-* そもそもなんだな
-* おもしれー女
-* 良すぎる
-* こっちみんな
-"""
-
-        return prompt
+    def _has_at_least_one_letter(self, s: str) -> bool:
+        """文字列にUnicodeのLetterカテゴリの文字が少なくとも1つ含まれているかチェック"""
+        return any(unicodedata.category(c).startswith("L") for c in s)
 
     def _extract_comments(self, generated_text: str) -> List[str]:
         """
@@ -256,14 +194,11 @@ class CommentGenerator:
                 continue
 
             # 番号付きリスト（1. や - など）を削除
-            line = re.sub(r"^[\d\-\*\+]+[\.\)]\s*", "", line)
+            line = re.sub(r"^[\d\-\*\+]+[\.\)]?\s*", "", line)
             line = re.sub(r"^[・•]\s*", "", line)
 
-            # 引用符を削除
-            line = line.strip('"\'「」『』')
-
             # コメントとして有効な文字列のみ追加
-            if line and len(line) > 0:
+            if line and len(line) > 0 and len(line) <= 30 and self._has_at_least_one_letter(line):
                 comments.append(line)
 
         return comments
@@ -354,7 +289,7 @@ if __name__ == "__main__":
 """
 
     logger.info("Generating comments...")
-    comments = comment_gen.generate_comments(test_transcription, num_comments=10)
+    comments = comment_gen.generate_comments(test_transcription, num_comments=100)
 
     logger.info("Generated comments:")
     for i, comment in enumerate(comments, 1):
