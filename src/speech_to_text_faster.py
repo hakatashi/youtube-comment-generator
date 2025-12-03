@@ -173,3 +173,102 @@ class SpeechToTextFaster:
         except Exception as e:
             logger.error(f"Transcription failed: {e}")
             return ""
+
+    def transcribe_with_speakers(
+        self,
+        audio_array: np.ndarray,
+        speaker_segments: list[tuple[int, float, float]],
+        sample_rate: int = 48000,
+    ) -> dict[int, str]:
+        """
+        話者セグメント情報付きで文字起こし（単一STT呼び出し）
+
+        Args:
+            audio_array: 結合された音声データ（numpy配列）
+            speaker_segments: 話者情報 [(user_id, start_time, end_time), ...]
+            sample_rate: サンプリングレート
+
+        Returns:
+            {user_id: transcription} の辞書
+        """
+        try:
+            # int16 -> float32に変換して正規化
+            if audio_array.dtype == np.int16:
+                audio_data = audio_array.astype(np.float32) / 32768.0
+            else:
+                audio_data = audio_array.astype(np.float32)
+
+            # Whisperモデルは16kHzを期待しているため、リサンプリング
+            target_sample_rate = 16000
+            original_sample_rate = sample_rate
+            if sample_rate != target_sample_rate:
+                logger.info(f"Resampling audio from {sample_rate} Hz to {target_sample_rate} Hz")
+                num_samples = int(len(audio_data) * target_sample_rate / sample_rate)
+                audio_data = signal.resample(audio_data, num_samples)
+                sample_rate = target_sample_rate
+
+            # 一時ファイルに保存 (faster-whisperはファイルパスを期待)
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                sf.write(tmp.name, audio_data, sample_rate)
+                tmp_path = tmp.name
+
+            try:
+                # 音声認識を実行（単一呼び出し）
+                segments, info = self.model.transcribe(
+                    tmp_path,
+                    language="ja",
+                    task="transcribe",
+                    beam_size=5,
+                    vad_filter=True,  # Voice Activity Detection (無音除去)
+                )
+
+                logger.info(f"Transcription completed")
+                logger.info(f"Language: {info.language} (probability: {info.language_probability:.2f})")
+
+                # 話者ごとの文字起こしを構築
+                user_transcriptions = {}
+
+                # 各STTセグメントを処理
+                for segment in segments:
+                    segment_start = segment.start
+                    segment_end = segment.end
+                    segment_text = segment.text
+
+                    logger.debug(f"STT segment: {segment_start:.2f}s - {segment_end:.2f}s: {segment_text}")
+
+                    # このセグメントに重なる話者を見つける
+                    for user_id, speaker_start, speaker_end in speaker_segments:
+                        # 重なりをチェック（少なくとも50%以上重なっている場合）
+                        overlap_start = max(segment_start, speaker_start)
+                        overlap_end = min(segment_end, speaker_end)
+                        overlap_duration = max(0, overlap_end - overlap_start)
+                        segment_duration = segment_end - segment_start
+
+                        if segment_duration > 0 and overlap_duration / segment_duration >= 0.5:
+                            # この話者にテキストを追加
+                            if user_id not in user_transcriptions:
+                                user_transcriptions[user_id] = []
+                            user_transcriptions[user_id].append(segment_text)
+                            logger.debug(f"  -> Assigned to user {user_id}")
+
+                # 各話者の文字起こしを結合
+                result = {}
+                for user_id, texts in user_transcriptions.items():
+                    combined_text = "".join(texts)
+                    # 「ごめん」などの誤認識を除去
+                    combined_text = combined_text.replace("ごめん", "").replace("視野", "").replace("児童", "").replace("はい", "").strip()
+                    if combined_text:
+                        result[user_id] = combined_text
+                        logger.info(f"User {user_id}: {len(combined_text)} characters")
+
+                return result
+
+            finally:
+                # 一時ファイルを削除
+                import os
+                os.unlink(tmp_path)
+
+        except Exception as e:
+            logger.error(f"Transcription with speakers failed: {e}")
+            return {}

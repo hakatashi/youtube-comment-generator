@@ -115,64 +115,8 @@ class CommentGeneratorApp:
 
         logger.info("Initialization complete!")
 
-    async def process_user_audio(self, user_id: int) -> tuple[str, str]:
-        """
-        特定ユーザーの音声を処理して文字起こしを返す
-
-        Args:
-            user_id: ユーザーID
-
-        Returns:
-            (ユーザー名, 文字起こしテキスト) のタプル
-        """
-        logger.info(f"Processing audio for user {user_id}...")
-
-        # バッファから60秒分の音声を取得
-        audio_data = self.audio_buffer.get_audio(user_id, duration=60)
-
-        if len(audio_data) == 0:
-            logger.warning(f"User {user_id}: No audio data in buffer")
-            return ("", "")
-
-        logger.info(f"User {user_id}: Retrieved {len(audio_data)} audio samples")
-
-        # デバッグ用にWAVファイルを保存
-        from datetime import datetime
-        from pathlib import Path
-
-        debug_dir = Path("debug")
-        debug_dir.mkdir(exist_ok=True)
-
-        debug_wav_path = debug_dir / f"debug_audio_user{user_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
-        wav_bytes = self.audio_buffer.get_wav_bytes(user_id, duration=60)
-        with open(debug_wav_path, 'wb') as f:
-            f.write(wav_bytes)
-        logger.info(f"User {user_id}: Saved debug audio to {debug_wav_path}")
-
-        # Speech-to-Text で文字起こし（別スレッドで実行）
-        logger.info(f"User {user_id}: Transcribing audio...")
-        loop = asyncio.get_event_loop()
-        transcription = await loop.run_in_executor(
-            self.executor,
-            self.stt.transcribe_from_array,
-            audio_data,
-            self.config.audio.sample_rate
-        )
-
-        # 「ごめん」を除去（無音部分の誤認識対策）
-        transcription = transcription.replace("ごめん", "").replace("視野", "").replace("児童", "").replace("はい", "").strip()
-
-        if not transcription.strip():
-            logger.warning(f"User {user_id}: Transcription is empty")
-            return ("", "")
-
-        user_name = self.audio_buffer.get_user_name(user_id)
-        logger.info(f"User {user_id} ({user_name}): Transcription: {transcription}")
-
-        return (user_name, transcription)
-
     async def process_audio_and_generate_comments(self) -> None:
-        """全ユーザーの音声処理とコメント生成を実行"""
+        """全ユーザーの音声処理とコメント生成を実行（最適化版: 単一STT呼び出し）"""
         logger.info("Processing audio and generating comments...")
 
         # バッファに音声が保存されているすべてのユーザーを取得
@@ -184,38 +128,73 @@ class CommentGeneratorApp:
 
         logger.info(f"Found {len(user_ids)} user(s) with audio data: {user_ids}")
 
-        # 各ユーザーの音声を文字起こし
-        user_transcriptions = []
+        # 十分なデータがあるユーザーのみをフィルタリング
+        ready_user_ids = []
         for user_id in user_ids:
-            # 十分なデータがあるユーザーのみ処理
-            if not self.audio_buffer.is_ready(user_id, required_duration=60):
+            if self.audio_buffer.is_ready(user_id, required_duration=60):
+                ready_user_ids.append(user_id)
+            else:
                 duration = self.audio_buffer.get_duration(user_id)
                 logger.warning(
                     f"User {user_id}: Insufficient audio data ({duration:.1f}s / 60s)"
                 )
-                continue
 
-            user_name, transcription = await self.process_user_audio(user_id)
-            if transcription:
-                user_transcriptions.append(f"{user_name}: {transcription}")
-
-        # すべてのユーザーの発言を結合
-        if not user_transcriptions:
-            logger.warning("No transcriptions available for comment generation")
+        if not ready_user_ids:
+            logger.warning("No users have sufficient audio data")
             return
 
-        combined_transcript = "\n".join(user_transcriptions)
-        logger.info(f"Combined transcript:\n{combined_transcript}")
+        logger.info(f"Processing {len(ready_user_ids)} user(s) with sufficient audio data")
+
+        # 複数ユーザーの音声を結合して取得（話者情報は不要）
+        merged_audio, _ = self.audio_buffer.get_merged_audio(
+            user_ids=ready_user_ids,
+            duration=60
+        )
+
+        if len(merged_audio) == 0:
+            logger.warning("No audio data in merged buffer")
+            return
+
+        logger.info(f"Merged audio: {len(merged_audio)} samples")
+
+        # デバッグ用にWAVファイルを保存
+        from datetime import datetime
+        from pathlib import Path
+
+        debug_dir = Path("debug")
+        debug_dir.mkdir(exist_ok=True)
+
+        debug_wav_path = debug_dir / f"debug_audio_merged_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
+        wav_bytes = self.audio_buffer.get_merged_wav_bytes(user_ids=ready_user_ids, duration=60)
+        with open(debug_wav_path, 'wb') as f:
+            f.write(wav_bytes)
+        logger.info(f"Saved merged debug audio to {debug_wav_path}")
+
+        # Speech-to-Text で文字起こし（単一呼び出し、話者分離なし）
+        logger.info("Transcribing merged audio...")
+        loop = asyncio.get_event_loop()
+        transcription = await loop.run_in_executor(
+            self.executor,
+            self.stt.transcribe_from_array,
+            merged_audio,
+            self.config.audio.sample_rate
+        )
+
+        # 文字起こし結果のチェック
+        if not transcription or not transcription.strip():
+            logger.warning("No transcription available for comment generation")
+            return
+
+        logger.info(f"Transcription: {transcription}")
 
         # コメント生成（別スレッドで実行）
-        logger.info("Generating comments from all users' speech...")
-        loop = asyncio.get_event_loop()
+        logger.info("Generating comments from transcription...")
         comments = await loop.run_in_executor(
             self.executor,
             self.comment_gen.generate_comments,
-            combined_transcript,
+            transcription,
             100,  # num_comments
-            user_transcriptions  # user_transcriptions for Firestore
+            None  # user_transcriptions は不要
         )
 
         # コメントを出力
