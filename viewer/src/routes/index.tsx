@@ -7,7 +7,7 @@ import {Set, List} from 'immutable';
 
 import styles from './index.module.css';
 
-const DEFAULT_COMMENT_INTERVAL = 60_000; // 30 seconds
+const DEFAULT_COMMENT_INTERVAL = 30_000; // 30 seconds
 const MAX_COMMENTS = 50;
 
 const randint = (max: number) => {
