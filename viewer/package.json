@@ -10,6 +10,7 @@
 		"@solidjs/router": "^0.15.4",
 		"@solidjs/start": "^1.2.0",
 		"firebase": "^12.6.0",
+		"immutable": "^5.1.4",
 		"solid-firebase": "^0.3.0",
 		"solid-js": "^1.9.10",
 		"vinxi": "^0.5.8",

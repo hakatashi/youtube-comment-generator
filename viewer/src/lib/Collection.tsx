@@ -1,26 +1,42 @@
-import {type JSX, For, Show} from 'solid-js';
-import type {FirestoreError, QuerySnapshot} from 'firebase/firestore';
+import type {DocumentData} from 'firebase/firestore';
+import {For, type JSX, Match, Switch} from 'solid-js';
+import type {UseFireStoreReturn} from './schema.ts';
 
-export interface CollectionProps<T> {
-	data: {
-		loading: boolean;
-		error: FirestoreError | null;
-		data: QuerySnapshot<T> | null;
-	};
-	fallback?: JSX.Element;
-	children: (data: T) => JSX.Element;
+interface Props<T extends DocumentData> {
+	data: UseFireStoreReturn<T[] | null | undefined> | null | undefined;
+	children: (item: T, index: () => number) => JSX.Element;
+	empty?: JSX.Element;
 }
 
-export default function Collection<T>(props: CollectionProps<T>) {
-	return (
-		<Show when={!props.data.loading} fallback={props.fallback || <div>Loading...</div>}>
-			<Show when={!props.data.error} fallback={<div>Error: {props.data.error?.message}</div>}>
-				<Show when={props.data.data}>
-					<For each={props.data.data?.docs}>
-						{(doc) => props.children(doc.data())}
-					</For>
-				</Show>
-			</Show>
-		</Show>
-	);
-}
+const Skeleton = (_props: {variant: 'text'}) => <span>Loading...</span>;
+
+const Collection = <T extends DocumentData>(props: Props<T>) => (
+	<Switch>
+		<Match when={props.data === null}>
+			<Skeleton variant="text" />
+		</Match>
+		<Match when={props.data?.loading}>
+			<Skeleton variant="text" />
+		</Match>
+		<Match when={props.data?.error}>
+			<span class="load-error">{props.data?.error?.toString()}</span>
+		</Match>
+		<Match when={props.data?.data} keyed={true}>
+			{(docs) => (
+				<Switch>
+					<Match when={docs.length === 0 && props.empty !== undefined}>
+						{props.empty}
+					</Match>
+					<Match when={true}>
+						<For each={docs}>{(doc, index) => props.children(doc, index)}</For>
+					</Match>
+				</Switch>
+			)}
+		</Match>
+		<Match when={true}>
+			<span class="load-error">Load error occurred.</span>
+		</Match>
+	</Switch>
+);
+
+export default Collection;
