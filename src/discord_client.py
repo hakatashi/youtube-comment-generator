@@ -53,7 +53,7 @@ class AudioBufferSink(discord.sinks.Sink):
 
             # 定期的にログを出力（デバッグ用）
             if self._bytes_written[user_id] % (48000 * 2 * 10) < len(data):  # 約10秒ごと
-                logger.info(f"User {user_id}: Total audio received: {self._bytes_written[user_id] / (48000 * 2):.1f}s")
+                logger.debug(f"User {user_id}: Total audio received: {self._bytes_written[user_id] / (48000 * 2):.1f}s")
 
     def cleanup(self):
         """クリーンアップ処理"""

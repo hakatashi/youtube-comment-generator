@@ -30,6 +30,7 @@ class ModelConfig:
     vlm_mmproj_file: str = "mmproj-Qwen3VL-30B-A3B-Instruct-F16.gguf"
     llama_server_path: Path = Path.home() / "Documents/GitHub/llama.cpp/build/bin/llama-server"
     storage_bucket_name: str = "vtuber-comment-generator.firebasestorage.app"
+    vlm_n_ctx: int = 16384  # VLMのコンテキスト長（デフォルト: 16384）
 
 
 @dataclass
@@ -94,6 +95,7 @@ class AppConfig:
             vlm_mmproj_file=os.getenv("VLM_MMPROJ_FILE", "mmproj-Qwen3VL-30B-A3B-Instruct-F16.gguf"),
             llama_server_path=Path(os.getenv("LLAMA_SERVER_PATH", str(Path.home() / "Documents/GitHub/llama.cpp/build/bin/llama-server"))),
             storage_bucket_name=os.getenv("STORAGE_BUCKET_NAME", "vtuber-comment-generator.firebasestorage.app"),
+            vlm_n_ctx=int(os.getenv("VLM_N_CTX", "16384")),
         )
 
         audio_config = AudioConfig(

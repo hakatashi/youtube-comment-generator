@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import time
 import unicodedata
+import sys
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -111,8 +112,8 @@ class VLMCommentGenerator:
         try:
             self.server_process = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
                 text=True,
                 bufsize=1,
                 universal_newlines=True,

@@ -95,6 +95,7 @@ class CommentGeneratorApp:
                 model_path=vlm_model_path,
                 mmproj_path=vlm_mmproj_path,
                 llama_server_path=self.config.model.llama_server_path,
+                n_ctx=self.config.model.vlm_n_ctx,
                 firestore_client=self.firestore_client,
                 storage_bucket_name=self.config.model.storage_bucket_name,
             )
