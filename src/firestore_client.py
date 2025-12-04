@@ -59,6 +59,7 @@ class FirestoreClient:
         stt_duration: Optional[float] = None,
         comment_gen_duration: Optional[float] = None,
         user_ids: Optional[list[int]] = None,
+        image_paths: Optional[list[str]] = None,
     ) -> str:
         """
         複数のコメントを一括でFirestoreに保存
@@ -75,6 +76,7 @@ class FirestoreClient:
             stt_duration: 文字起こしにかかった時間（秒）
             comment_gen_duration: コメント生成にかかった時間（秒）
             user_ids: 文字起こしに使用したユーザーのID一覧
+            image_paths: 使用した画像のStorageパスのリスト
 
         Returns:
             バッチのドキュメントID
@@ -101,6 +103,8 @@ class FirestoreClient:
             batch_data["comment_gen_duration"] = comment_gen_duration
         if user_ids is not None:
             batch_data["user_ids"] = user_ids
+        if image_paths is not None:
+            batch_data["image_paths"] = image_paths
 
         # 合計時間を計算
         if stt_duration is not None and comment_gen_duration is not None:

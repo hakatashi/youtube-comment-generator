@@ -23,6 +23,13 @@ class ModelConfig:
     qwen_model_file: str = "Qwen3-32B-Q5_K_M.gguf"
     device: str = "cuda"  # ROCm uses CUDA API
     models_dir: Path = Path("./models")
+    # VLM settings
+    use_vlm: bool = False  # VLMを使用するかどうか
+    vlm_model: str = "Qwen/Qwen3-VL-30B-A3B-Instruct-GGUF"
+    vlm_model_file: str = "Qwen3VL-30B-A3B-Instruct-Q4_K_M.gguf"
+    vlm_mmproj_file: str = "mmproj-Qwen3VL-30B-A3B-Instruct-F16.gguf"
+    llama_server_path: Path = Path.home() / "Documents/GitHub/llama.cpp/build/bin/llama-server"
+    storage_bucket_name: str = "vtuber-comment-generator.firebasestorage.app"
 
 
 @dataclass
@@ -80,6 +87,13 @@ class AppConfig:
             qwen_model_file=os.getenv("QWEN_MODEL_FILE", "Qwen3-32B-Q5_K_M.gguf"),
             device=os.getenv("DEVICE", "cuda"),
             models_dir=Path(os.getenv("MODELS_DIR", "./models")),
+            # VLM settings
+            use_vlm=os.getenv("USE_VLM", "false").lower() == "true",
+            vlm_model=os.getenv("VLM_MODEL", "Qwen/Qwen3-VL-30B-A3B-Instruct-GGUF"),
+            vlm_model_file=os.getenv("VLM_MODEL_FILE", "Qwen3VL-30B-A3B-Instruct-Q4_K_M.gguf"),
+            vlm_mmproj_file=os.getenv("VLM_MMPROJ_FILE", "mmproj-Qwen3VL-30B-A3B-Instruct-F16.gguf"),
+            llama_server_path=Path(os.getenv("LLAMA_SERVER_PATH", str(Path.home() / "Documents/GitHub/llama.cpp/build/bin/llama-server"))),
+            storage_bucket_name=os.getenv("STORAGE_BUCKET_NAME", "vtuber-comment-generator.firebasestorage.app"),
         )
 
         audio_config = AudioConfig(

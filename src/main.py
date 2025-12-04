@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 
 from .audio_buffer import AudioBuffer
 from .comment_generator import CommentGenerator
+from .vlm_comment_generator import VLMCommentGenerator
 from .config import AppConfig
 from .discord_client import start_discord_client
 from .firestore_client import FirestoreClient
@@ -74,20 +75,48 @@ class CommentGeneratorApp:
             logger.warning("Comments will be saved to file instead")
 
         # LLMの初期化
-        logger.info("Loading LLM for comment generation...")
+        if self.config.model.use_vlm:
+            logger.info("Loading VLM for comment generation...")
 
-        # モデルファイルが存在することを確認（なければダウンロード）
-        model_path = ModelDownloader.ensure_qwen_model(
-            repo_id=self.config.model.qwen_model,
-            filename=self.config.model.qwen_model_file,
-            models_dir=self.config.model.models_dir,
-        )
+            # VLMモデルファイルが存在することを確認（なければダウンロード）
+            vlm_model_path = ModelDownloader.ensure_qwen_model(
+                repo_id=self.config.model.vlm_model,
+                filename=self.config.model.vlm_model_file,
+                models_dir=self.config.model.models_dir,
+            )
 
-        self.comment_gen = CommentGenerator(
-            model_path=model_path,
-            firestore_client=self.firestore_client,
-        )
-        logger.info("LLM loaded")
+            vlm_mmproj_path = ModelDownloader.ensure_qwen_model(
+                repo_id=self.config.model.vlm_model,
+                filename=self.config.model.vlm_mmproj_file,
+                models_dir=self.config.model.models_dir,
+            )
+
+            self.comment_gen = VLMCommentGenerator(
+                model_path=vlm_model_path,
+                mmproj_path=vlm_mmproj_path,
+                llama_server_path=self.config.model.llama_server_path,
+                firestore_client=self.firestore_client,
+                storage_bucket_name=self.config.model.storage_bucket_name,
+            )
+            # VLMサーバーを起動
+            if not self.comment_gen.start_server():
+                raise RuntimeError("Failed to start VLM server")
+            logger.info("VLM loaded and server started")
+        else:
+            logger.info("Loading LLM for comment generation...")
+
+            # モデルファイルが存在することを確認（なければダウンロード）
+            model_path = ModelDownloader.ensure_qwen_model(
+                repo_id=self.config.model.qwen_model,
+                filename=self.config.model.qwen_model_file,
+                models_dir=self.config.model.models_dir,
+            )
+
+            self.comment_gen = CommentGenerator(
+                model_path=model_path,
+                firestore_client=self.firestore_client,
+            )
+            logger.info("LLM loaded")
 
         # Speech-to-Text モデルの初期化 (faster-whisper: 5.6倍高速)
         logger.info("Loading Speech-to-Text model (faster-whisper)...")
@@ -293,6 +322,13 @@ class CommentGeneratorApp:
                     await self.discord_bot.close()
                 except Exception as e:
                     logger.error(f"Error during Discord bot shutdown: {e}")
+
+            # VLMサーバーを停止
+            if isinstance(self.comment_gen, VLMCommentGenerator):
+                try:
+                    self.comment_gen.stop_server()
+                except Exception as e:
+                    logger.error(f"Error during VLM server shutdown: {e}")
 
             # エグゼキューターをシャットダウン
             logger.info("Shutting down thread pool executor...")
