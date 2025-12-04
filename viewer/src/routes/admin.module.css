@@ -173,6 +173,42 @@
 	font-style: italic;
 }
 
+.imageGallery {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	margin-top: 8px;
+}
+
+.imageContainer {
+	flex: 1 1 300px;
+	max-width: 600px;
+}
+
+.screenshotImage {
+	width: 100%;
+	height: auto;
+	border-radius: 6px;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+	transition: transform 0.2s;
+	cursor: pointer;
+}
+
+.screenshotImage:hover {
+	transform: scale(1.02);
+}
+
+.imagePath {
+	font-size: 11px;
+	color: #666;
+	margin-top: 4px;
+	font-family: monospace;
+	background: #f0f0f0;
+	padding: 4px 8px;
+	border-radius: 3px;
+	overflow-wrap: break-word;
+}
+
 /* レスポンシブ対応 */
 @media (max-width: 768px) {
 	.container {

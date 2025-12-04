@@ -6,6 +6,7 @@ import {
 	type CollectionReference,
 	type Query,
 } from 'firebase/firestore';
+import {getStorage} from 'firebase/storage';
 import type {Batch, Comment} from './schema';
 
 const firebaseConfig = {
@@ -20,8 +21,9 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 
 const db = getFirestore(app);
+const storage = getStorage(app);
 
 const Batches = collection(db, 'batches') as CollectionReference<Batch>;
 const AllComments = collectionGroup(db, 'comments') as Query<Comment>;
 
-export {app as default, db, Batches, AllComments};
+export {app as default, db, storage, Batches, AllComments};

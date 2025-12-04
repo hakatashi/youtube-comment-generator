@@ -5,6 +5,19 @@ rules_version = '2';
 //    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
 service firebase.storage {
   match /b/{bucket}/o {
+    // Allow public read access to screenshots directory
+    match /screenshots/{filename} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Allow public read access to legacy screenshot
+    match /discord_screenshot.png {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Deny all other access
     match /{allPaths=**} {
       allow read, write: if false;
     }

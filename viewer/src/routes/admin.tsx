@@ -1,7 +1,8 @@
 import {createEffect, createSignal, For, Show, type Component} from 'solid-js';
-import {Batches} from '~/lib/firebase';
+import {Batches, storage} from '~/lib/firebase';
 import {useFirestore} from 'solid-firebase';
 import {limit, orderBy, query, collection, getDocs, CollectionReference} from 'firebase/firestore';
+import {ref, getDownloadURL} from 'firebase/storage';
 import type {Batch, Comment} from '~/lib/schema';
 import {db} from '~/lib/firebase';
 
@@ -14,8 +15,9 @@ const Admin: Component = () => {
 		limit(20),
 	));
 
-	const [batchesWithComments, setBatchesWithComments] = createSignal<Array<{batch: Batch & {id: string}, comments: Comment[]}>>([]);
+	const [batchesWithComments, setBatchesWithComments] = createSignal<Array<{batch: Batch & {id: string}, comments: Comment[], imageUrls?: string[]}>>([]);
 	const [expandedPrompts, setExpandedPrompts] = createSignal<Set<string>>(new Set());
+	const [expandedImages, setExpandedImages] = createSignal<Set<string>>(new Set());
 
 	createEffect(async () => {
 		if (batchesQuery.data) {
@@ -28,9 +30,25 @@ const Admin: Component = () => {
 						...doc.data(),
 					} as Comment));
 
+					// 画像URLを取得
+					let imageUrls: string[] | undefined;
+					if (batch.image_paths && batch.image_paths.length > 0) {
+						try {
+							imageUrls = await Promise.all(
+								batch.image_paths.map(async (path) => {
+									const imageRef = ref(storage, path);
+									return await getDownloadURL(imageRef);
+								})
+							);
+						} catch (error) {
+							console.error('Failed to load image URLs:', error);
+						}
+					}
+
 					return {
 						batch: {id: batch.id, ...batch},
 						comments,
+						imageUrls,
 					};
 				})
 			);
@@ -59,6 +77,18 @@ const Admin: Component = () => {
 
 	const togglePrompt = (batchId: string) => {
 		setExpandedPrompts((prev) => {
+			const newSet = new Set(prev);
+			if (newSet.has(batchId)) {
+				newSet.delete(batchId);
+			} else {
+				newSet.add(batchId);
+			}
+			return newSet;
+		});
+	};
+
+	const toggleImages = (batchId: string) => {
+		setExpandedImages((prev) => {
 			const newSet = new Set(prev);
 			if (newSet.has(batchId)) {
 				newSet.delete(batchId);
@@ -117,18 +147,53 @@ const Admin: Component = () => {
 								<span class={styles.metaItem}>
 									<strong>合計:</strong> {formatDuration(item.batch.total_duration)}
 								</span>
+								<Show when={item.imageUrls && item.imageUrls.length > 0}>
+									<span class={styles.metaItem}>
+										<strong>画像:</strong> {item.imageUrls!.length}枚
+									</span>
+								</Show>
 								<button
 									class={styles.promptToggle}
 									onClick={() => togglePrompt(item.batch.id)}
 								>
 									{expandedPrompts().has(item.batch.id) ? 'プロンプトを隠す' : 'プロンプトを表示'}
 								</button>
+								<Show when={item.imageUrls && item.imageUrls.length > 0}>
+									<button
+										class={styles.promptToggle}
+										onClick={() => toggleImages(item.batch.id)}
+									>
+										{expandedImages().has(item.batch.id) ? '画像を隠す' : '画像を表示'}
+									</button>
+								</Show>
 							</div>
 
 							<div class={styles.batchContent}>
 								<Show when={expandedPrompts().has(item.batch.id)}>
 									<div class={styles.section}>
 										<p class={styles.prompt}>{item.batch.prompt}</p>
+									</div>
+								</Show>
+
+								<Show when={expandedImages().has(item.batch.id) && item.imageUrls}>
+									<div class={styles.section}>
+										<h3>使用した画像</h3>
+										<div class={styles.imageGallery}>
+											<For each={item.imageUrls}>
+												{(imageUrl, index) => (
+													<div class={styles.imageContainer}>
+														<img
+															src={imageUrl}
+															alt={`Screenshot ${index() + 1}`}
+															class={styles.screenshotImage}
+														/>
+														<Show when={item.batch.image_paths && item.batch.image_paths[index()]}>
+															<p class={styles.imagePath}>{item.batch.image_paths![index()]}</p>
+														</Show>
+													</div>
+												)}
+											</For>
+										</div>
 									</div>
 								</Show>
 

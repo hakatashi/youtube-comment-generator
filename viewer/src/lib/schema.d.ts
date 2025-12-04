@@ -17,6 +17,7 @@ export interface Batch extends DocumentData {
 	comment_gen_duration?: number;
 	total_duration?: number;
 	user_ids?: number[];
+	image_paths?: string[];
 }
 
 export interface Comment extends DocumentData {
