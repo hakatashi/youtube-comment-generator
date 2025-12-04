@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Discord voice channel audio recorder that generates YouTube-style comments in real-time using local AI models. It captures audio from Discord voice channels, transcribes it using faster-whisper (Kotoba-Whisper), and generates comments using Qwen3-32B LLM running on AMD ROCm GPU.
+This is a Discord voice channel audio recorder that generates YouTube-style comments in real-time using local AI models. It captures audio from Discord voice channels, transcribes it using faster-whisper (Kotoba-Whisper), and generates comments using either:
+- **Qwen3-32B LLM** (text-only, via llama-cpp-python)
+- **Qwen3-VL-30B VLM** (Vision Language Model, via llama-server HTTP API) - uses both transcription and stream screenshots from Firebase Storage
+
+The VLM mode enables the system to generate more contextually aware comments by analyzing the actual stream content visible on screen.
 
 ## Development Commands
 
@@ -49,8 +53,28 @@ firebase deploy
 ### Model Installation
 
 On first run, models are automatically downloaded:
-- **Qwen3-32B** (~20GB) → `models/` directory
+- **Qwen3-32B** (~20GB) → `models/` directory (for text-only mode)
+- **Qwen3-VL-30B** (~17GB + 1GB mmproj) → `models/` directory (for VLM mode)
 - **Kotoba-Whisper v2.0** (~3GB) → `models/faster-whisper/` directory
+
+### VLM Mode Setup
+
+To enable Vision Language Model mode:
+
+1. Set environment variable: `USE_VLM=true` in `.env`
+2. Ensure llama-server binary is available (default: `~/Documents/GitHub/llama.cpp/build/bin/llama-server`)
+3. Configure Firebase Storage bucket name (default: `vtuber-comment-generator.firebasestorage.app`)
+4. Upload stream screenshots to Firebase Storage:
+   - **Current screenshot**: `/discord_screenshot.png` (for backward compatibility)
+   - **Historical screenshots**: `/screenshots/discord_screenshot_YYYYMMDDHHMMSS.png`
+   - The system automatically uses the latest file from `/screenshots/` directory
+
+The VLM mode uses llama-server HTTP API instead of llama-cpp-python to work around compatibility issues with Qwen3-VL models.
+
+**Screenshot Management**:
+- VLM fetches the latest screenshot from `/screenshots/` directory (sorted by filename)
+- The used screenshot path is saved in Firestore batch metadata as `image_paths` (array of strings)
+- This design supports future multi-image input while maintaining backward compatibility
 
 ### ROCm-Specific Setup
 
@@ -83,13 +107,25 @@ The application processes audio in a three-stage pipeline:
    - Removes silence using energy threshold (-45dB default, 0.5s minimum silence)
    - Processes merged audio from all users in a single STT call (optimization)
 
-3. **Comment Generation (src/comment_generator.py)**
+3. **Comment Generation**
+
+   **Text-only mode (src/comment_generator.py)**:
    - Uses Qwen3-32B (Q5_K_M quantized, ~24GB VRAM) via llama-cpp-python
    - Runs on GPU with ROCm backend (uses CUDA API compatibility)
    - Maintains 30-comment rolling history for context
    - Uses Jinja2 templates (`src/templates/comment_prompt.jinja`) for prompts
    - Automatically strips Qwen3's `<think>` blocks from output
    - Validates comments: 1-30 chars, must contain Unicode letters
+
+   **VLM mode (src/vlm_comment_generator.py)** (when `USE_VLM=true`):
+   - Uses Qwen3-VL-30B (Q4_K_M quantized, ~17GB VRAM + 1GB mmproj) via llama-server HTTP API
+   - Runs llama-server as a subprocess with ROCm GPU acceleration
+   - Fetches latest screenshot from Firebase Storage `/screenshots/` directory
+   - Analyzes both audio transcription AND visual stream content
+   - Uses Jinja2 templates (`src/templates/vlm_comment_prompt.jinja`) for prompts
+   - Maintains same 30-comment rolling history and validation as text-only mode
+   - Automatically cleans up temporary image files after generation
+   - Saves used image paths to Firestore for traceability
 
 ### Main Loop (src/main.py)
 
@@ -106,9 +142,12 @@ The application processes audio in a three-stage pipeline:
 **Batch metadata** at `/batches/{batchId}`:
 - `created_at`: Timestamp
 - `count`: Number of comments generated
-- `prompt`: Full prompt sent to LLM
+- `prompt`: Full prompt sent to LLM/VLM
 - `transcription`: Merged transcription text
 - `user_transcriptions`: Array of per-user transcriptions
+- `image_paths`: Array of Firebase Storage paths used for generation (VLM mode only)
+  - Example: `["screenshots/discord_screenshot_20250101090000.png"]`
+  - Designed as array to support future multi-image input
 
 **Individual comments** at `/batches/{batchId}/comments/{commentId}`:
 - `comment`: Generated comment text
