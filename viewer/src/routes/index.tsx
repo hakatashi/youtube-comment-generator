@@ -23,7 +23,7 @@ const Index: Component = () => {
 
 	const [comments, setComments] = createSignal<List<Comment>>(List());
 	const [commentsPool, setCommentsPool] = createSignal<List<Comment>>(List());
-	const [processedComments, setProcessedComments] = createSignal<Set<string>>(Set());
+	const [_processedComments, setProcessedComments] = createSignal<Set<string>>(Set());
 	const [commentUpdateSchedule, setCommentUpdateSchedule] = createSignal<List<number>>(List());
 
 	let commentsRef!: HTMLDivElement;
@@ -91,9 +91,9 @@ const Index: Component = () => {
 		}
 	}, 1000 / 30);
 
-	createEffect(() => {
-		return () => clearInterval(intervalId);
-	});
+	createEffect(() =>
+		() => clearInterval(intervalId)
+	);
 
 	return (
 		<div class={styles.container}>
