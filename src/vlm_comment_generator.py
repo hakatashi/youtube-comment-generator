@@ -185,12 +185,16 @@ class VLMCommentGenerator:
         logger.error("Server failed to start within timeout period")
         return False
 
-    def _get_latest_screenshot_from_storage(self) -> Optional[tuple[str, str]]:
+    def _get_latest_screenshots_from_storage(self, count: int = 3, max_age_minutes: int = 10) -> Optional[list[tuple[str, str]]]:
         """
-        Firebase Storageの/screenshots/ディレクトリから最新の画像を取得
+        Firebase Storageの/screenshots/ディレクトリから最新の画像を複数取得
+
+        Args:
+            count: 取得する画像の数（デフォルト: 3）
+            max_age_minutes: 画像の最大経過時間（分）、この時間より古い画像は除外（デフォルト: 10）
 
         Returns:
-            (ローカルファイルパス, Storageのパス) のタプル、失敗時はNone
+            [(ローカルファイルパス, Storageのパス), ...] のリスト、失敗時はNone
         """
         if not self.storage_bucket_name:
             logger.error("Storage bucket name not configured")
@@ -198,6 +202,7 @@ class VLMCommentGenerator:
 
         try:
             from firebase_admin import storage
+            from datetime import timedelta
 
             bucket = storage.bucket(self.storage_bucket_name)
 
@@ -208,22 +213,52 @@ class VLMCommentGenerator:
                 logger.warning("No screenshots found in Storage /screenshots/ directory")
                 return None
 
-            # ファイル名でソートして最新のものを取得
-            # ファイル名が discord_screenshot_20250101090000.png のような形式を想定
-            blobs.sort(key=lambda b: b.name, reverse=True)
-            latest_blob = blobs[0]
+            # 現在時刻（UTC）
+            now_utc = datetime.now(timezone.utc)
+            cutoff_time = now_utc - timedelta(minutes=max_age_minutes)
 
-            logger.info(f"Found {len(blobs)} screenshot(s) in Storage")
-            logger.info(f"Using latest screenshot: {latest_blob.name}")
+            # ファイル名からタイムスタンプをパースして、max_age_minutes以内のものだけをフィルタ
+            valid_blobs = []
+            for blob in blobs:
+                # ファイル名が discord_screenshot_20250101090000.png のような形式を想定
+                match = re.search(r'discord_screenshot_(\d{14})\.png', blob.name)
+                if match:
+                    timestamp_str = match.group(1)
+                    try:
+                        # タイムスタンプをパース（UTC）
+                        timestamp = datetime.strptime(timestamp_str, '%Y%m%d%H%M%S').replace(tzinfo=timezone.utc)
+                        # 10分以内のものだけを追加
+                        if timestamp >= cutoff_time:
+                            valid_blobs.append((blob, timestamp))
+                    except ValueError:
+                        logger.warning(f"Failed to parse timestamp from filename: {blob.name}")
+                        continue
+
+            if not valid_blobs:
+                logger.warning(f"No screenshots found within the last {max_age_minutes} minutes")
+                return None
+
+            # タイムスタンプでソートして最新のものを取得
+            valid_blobs.sort(key=lambda x: x[1], reverse=True)
+
+            # 最新count件を取得（存在する数が少ない場合は全て）
+            latest_blobs = [blob for blob, _ in valid_blobs[:min(count, len(valid_blobs))]]
+
+            logger.info(f"Found {len(blobs)} screenshot(s) in Storage, {len(valid_blobs)} within last {max_age_minutes} minutes")
+            logger.info(f"Using latest {len(latest_blobs)} screenshot(s): {[b.name for b in latest_blobs]}")
 
             # 一時ファイルにダウンロード
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
-                latest_blob.download_to_filename(tmp_file.name)
-                logger.debug(f"Downloaded image from Storage to: {tmp_file.name}")
-                return tmp_file.name, latest_blob.name
+            results = []
+            for blob in latest_blobs:
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
+                    blob.download_to_filename(tmp_file.name)
+                    logger.debug(f"Downloaded image from Storage to: {tmp_file.name}")
+                    results.append((tmp_file.name, blob.name))
+
+            return results
 
         except Exception as e:
-            logger.error(f"Failed to get latest screenshot from Storage: {e}")
+            logger.error(f"Failed to get latest screenshots from Storage: {e}")
             return None
 
     def _encode_image_to_base64(self, image_path: str) -> str:
@@ -231,35 +266,50 @@ class VLMCommentGenerator:
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
 
-    def _chat_with_image(self, image_path: str, prompt: str, system_prompt: str = None) -> Optional[str]:
-        """llama-server APIを使用して画像付きチャット"""
-        if not os.path.exists(image_path):
-            logger.error(f"Image not found: {image_path}")
-            return None
+    def _chat_with_images(self, image_paths: list[str], prompt: str, system_prompt: str = None) -> Optional[str]:
+        """llama-server APIを使用して画像付き/テキストのみチャット
 
-        # 画像をbase64エンコード
-        try:
-            image_base64 = self._encode_image_to_base64(image_path)
-        except Exception as e:
-            logger.error(f"Error encoding image: {e}")
-            return None
+        Args:
+            image_paths: 画像ファイルパスのリスト（空リストの場合はテキストのみ）
+            prompt: プロンプトテキスト
+            system_prompt: システムプロンプト
+        """
+        # 画像がある場合のみエンコード
+        image_base64_list = []
+        if image_paths:
+            # 画像の存在チェック
+            for image_path in image_paths:
+                if not os.path.exists(image_path):
+                    logger.error(f"Image not found: {image_path}")
+                    return None
+
+            # 画像をbase64エンコード
+            try:
+                image_base64_list = [self._encode_image_to_base64(path) for path in image_paths]
+            except Exception as e:
+                logger.error(f"Error encoding images: {e}")
+                return None
 
         # メッセージを準備
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
 
-        # ユーザーメッセージに画像を追加
-        user_content = [
-            {"type": "text", "text": prompt},
-            {
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{image_base64}"
-                }
-            }
-        ]
-        messages.append({"role": "user", "content": user_content})
+        # ユーザーメッセージにテキストを追加
+        if image_base64_list:
+            # 画像がある場合: content配列形式
+            user_content = [{"type": "text", "text": prompt}]
+            for image_base64 in image_base64_list:
+                user_content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{image_base64}"
+                    }
+                })
+            messages.append({"role": "user", "content": user_content})
+        else:
+            # 画像がない場合: テキストのみ
+            messages.append({"role": "user", "content": prompt})
 
         # リクエストデータを準備
         request_data = {
@@ -323,13 +373,17 @@ class VLMCommentGenerator:
             logger.warning("Empty transcription provided")
             return []
 
-        # Firebase Storageから最新の画像を取得
-        result = self._get_latest_screenshot_from_storage()
-        if not result:
-            logger.error("Failed to get screenshot from Storage, cannot generate comments")
-            return []
+        # Firebase Storageから最新の画像を複数取得
+        results = self._get_latest_screenshots_from_storage(count=3)
 
-        image_path, storage_path = result
+        # 画像がない場合は空のリストを使用（テキストのみモード）
+        if not results:
+            logger.warning("No recent screenshots found, generating comments from transcription only")
+            image_paths = []
+            storage_paths = []
+        else:
+            image_paths = [result[0] for result in results]
+            storage_paths = [result[1] for result in results]
 
         try:
             import time as time_module
@@ -339,14 +393,17 @@ class VLMCommentGenerator:
             prompt = self._create_prompt(transcription, num_comments)
 
             logger.info(f"Generating {num_comments} comments with VLM...")
-            logger.info(f"Using screenshot: {storage_path}")
+            if storage_paths:
+                logger.info(f"Using {len(storage_paths)} screenshot(s): {storage_paths}")
+            else:
+                logger.info("No screenshots available, using transcription only")
             logger.debug(f"Prompt: {prompt}")
 
             system_prompt = "あなたは日本のVTuber配信のコメント欄で視聴者がよく書き込むようなコメントを生成するアシスタントです。"
 
-            # VLMで生成
-            generated_text = self._chat_with_image(
-                image_path=image_path,
+            # VLM/LLMで生成
+            generated_text = self._chat_with_images(
+                image_paths=image_paths,
                 prompt=prompt,
                 system_prompt=system_prompt
             )
@@ -379,7 +436,7 @@ class VLMCommentGenerator:
                     stt_duration,
                     comment_gen_duration,
                     user_ids or [],
-                    [storage_path],  # 使用した画像パスを配列として渡す
+                    storage_paths,  # 使用した画像パスを配列として渡す
                 )
             else:
                 self._save_comments_to_file(comments[:num_comments])
@@ -392,12 +449,13 @@ class VLMCommentGenerator:
 
         finally:
             # 一時画像ファイルを削除
-            if image_path and os.path.exists(image_path):
-                try:
-                    os.unlink(image_path)
-                    logger.debug(f"Cleaned up temporary image file: {image_path}")
-                except Exception as e:
-                    logger.warning(f"Failed to clean up temporary file: {e}")
+            for image_path in image_paths:
+                if image_path and os.path.exists(image_path):
+                    try:
+                        os.unlink(image_path)
+                        logger.debug(f"Cleaned up temporary image file: {image_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up temporary file: {e}")
 
     def _create_prompt(self, transcription: str, num_comments: int) -> str:
         """
